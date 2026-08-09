@@ -94,6 +94,22 @@ void load_constant(u64 value,
   }
 }
 
+void emit_arm64_memory_address(emitter::ObjectGenerator* gen,
+                               emitter::IR_Record irec,
+                               Register base_reg,
+                               Register offset_reg,
+                               s64 constant_offset) {
+  gen->add_instr(IGen::mov_gpr64_gpr64(*gen, X16, base_reg), irec);
+  gen->add_instr(IGen::add_gpr64_gpr64(*gen, X16, offset_reg), irec);
+  if (constant_offset > 0) {
+    gen->add_instr(IGen::mov_gpr64_u64(*gen, X17, u64(constant_offset)), irec);
+    gen->add_instr(IGen::add_gpr64_gpr64(*gen, X16, X17), irec);
+  } else if (constant_offset < 0) {
+    gen->add_instr(IGen::mov_gpr64_u64(*gen, X17, u64(-constant_offset)), irec);
+    gen->add_instr(IGen::sub_gpr64_gpr64(*gen, X16, X17), irec);
+  }
+}
+
 void regset_common(emitter::ObjectGenerator* gen,
                    const AllocationResult& allocs,
                    emitter::IR_Record irec,
@@ -642,7 +658,12 @@ void IR_RegValAddr::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_RegValAddr::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                      const AllocationResult& allocs,
                                      emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_RegValAddr::do_codegen_arm64");
+  auto dest_reg = get_reg(m_dest, allocs, irec);
+  int stack_offset = get_stack_offset(m_src, allocs);
+  gen->add_instr(IGen::lea_reg_plus_off(*gen, dest_reg, SP, stack_offset), irec);
+  gen->add_instr(IGen::sub_gpr64_gpr64(
+                     *gen, dest_reg, emitter::get_register_info(gen->instr_set()).get_offset_reg()),
+                 irec);
 }
 
 /////////////////////
@@ -1261,7 +1282,31 @@ void IR_LoadConstOffset::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_LoadConstOffset::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                           const AllocationResult& allocs,
                                           emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_LoadConstOffset::do_codegen_arm64");
+  auto dest_reg = m_use_coloring ? get_reg(m_dest, allocs, irec) : get_no_color_reg(m_dest);
+  auto base_reg = m_use_coloring ? get_reg(m_base, allocs, irec) : get_no_color_reg(m_base);
+
+  if (m_dest->ireg().reg_class == RegClass::GPR_64) {
+    auto offset_reg = emitter::get_register_info(gen->instr_set()).get_offset_reg();
+    emit_arm64_memory_address(gen, irec, base_reg, offset_reg, m_offset);
+    gen->add_instr(IGen::mov_gpr64_u64(*gen, X17, 0), irec);
+    gen->add_instr(
+        IGen::load_goal_gpr(*gen, dest_reg, X16, X17, 0, m_info.size, m_info.sign_extend), irec);
+  } else if (m_dest->ireg().reg_class == RegClass::FLOAT && m_info.size == 4 &&
+             !m_info.sign_extend && m_info.reg == RegClass::FLOAT) {
+    emit_arm64_memory_address(gen, irec, base_reg,
+                              emitter::get_register_info(gen->instr_set()).get_offset_reg(),
+                              m_offset);
+    gen->add_instr(IGen::load32_xmm32_gpr64_plus_s32(*gen, dest_reg, X16, 0), irec);
+  } else if ((m_dest->ireg().reg_class == RegClass::VECTOR_FLOAT ||
+              m_dest->ireg().reg_class == RegClass::INT_128) &&
+             m_info.size == 16 && !m_info.sign_extend && m_info.reg == m_dest->ireg().reg_class) {
+    emit_arm64_memory_address(gen, irec, base_reg,
+                              emitter::get_register_info(gen->instr_set()).get_offset_reg(),
+                              m_offset);
+    gen->add_instr(IGen::load128_simd128_gpr64(*gen, dest_reg, X16), irec);
+  } else {
+    throw std::runtime_error("IR_LoadConstOffset::do_codegen_arm64 not supported");
+  }
 }
 
 ///////////////////////
@@ -1315,7 +1360,31 @@ void IR_StoreConstOffset::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_StoreConstOffset::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                            const AllocationResult& allocs,
                                            emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_StoreConstOffset::do_codegen_arm64");
+  auto base_reg = m_use_coloring ? get_reg(m_base, allocs, irec) : get_no_color_reg(m_base);
+  auto value_reg = m_use_coloring ? get_reg(m_value, allocs, irec) : get_no_color_reg(m_value);
+
+  if (m_value->ireg().reg_class == RegClass::GPR_64) {
+    auto offset_reg = emitter::get_register_info(gen->instr_set()).get_offset_reg();
+    emit_arm64_memory_address(gen, irec, base_reg, offset_reg, m_offset);
+    gen->add_instr(IGen::mov_gpr64_u64(*gen, X17, 0), irec);
+    gen->add_instr(IGen::store_goal_gpr(*gen, X16, value_reg, X17, 0, m_size), irec);
+  } else if (m_value->ireg().reg_class == RegClass::FLOAT && m_size == 4) {
+    emit_arm64_memory_address(gen, irec, base_reg,
+                              emitter::get_register_info(gen->instr_set()).get_offset_reg(),
+                              m_offset);
+    gen->add_instr(IGen::store32_xmm32_gpr64_plus_s32(*gen, X16, value_reg, 0), irec);
+  } else if (m_value->ireg().reg_class == RegClass::VECTOR_FLOAT ||
+             m_value->ireg().reg_class == RegClass::INT_128) {
+    if (m_size != 16) {
+      throw std::runtime_error("IR_StoreConstOffset::do_codegen_arm64 invalid vector size");
+    }
+    emit_arm64_memory_address(gen, irec, base_reg,
+                              emitter::get_register_info(gen->instr_set()).get_offset_reg(),
+                              m_offset);
+    gen->add_instr(IGen::store128_gpr64_simd128(*gen, X16, value_reg), irec);
+  } else {
+    throw std::runtime_error("IR_StoreConstOffset::do_codegen_arm64 not supported");
+  }
 }
 
 ///////////////////////
@@ -1479,7 +1548,12 @@ void IR_GetStackAddr::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_GetStackAddr::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                        const AllocationResult& allocs,
                                        emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_GetStackAddr::do_codegen_arm64");
+  auto dest_reg = get_reg(m_dest, allocs, irec);
+  int stack_offset = GPR_SIZE * allocs.get_slot_for_var(m_slot);
+  gen->add_instr(IGen::lea_reg_plus_off(*gen, dest_reg, SP, stack_offset), irec);
+  gen->add_instr(IGen::sub_gpr64_gpr64(
+                     *gen, dest_reg, emitter::get_register_info(gen->instr_set()).get_offset_reg()),
+                 irec);
 }
 
 ///////////////////////
