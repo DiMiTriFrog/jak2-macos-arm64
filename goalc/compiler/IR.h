@@ -14,8 +14,8 @@ class IR {
   virtual std::string print() = 0;
   virtual RegAllocInstr to_rai() = 0;
   // Most IR instructions have architecture-independent allocation metadata.
-  // ARM vector blend/swizzle additionally reserve emitter scratch registers,
-  // so those instructions override this architecture-aware entry point.
+  // ARM vector/int128 operations that reserve emitter scratch registers
+  // override this architecture-aware entry point.
   virtual RegAllocInstr to_rai(emitter::InstructionSet instr_set) {
     (void)instr_set;
     return to_rai();
@@ -708,6 +708,7 @@ class IR_Int128Math3Asm : public IR_Asm {
                     Kind kind);
   std::string print() override;
   RegAllocInstr to_rai() override;
+  RegAllocInstr to_rai(emitter::InstructionSet instr_set) override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
                       const AllocationResult& allocs,
                       emitter::IR_Record irec) override;
@@ -732,6 +733,7 @@ class IR_Int128Math2Asm : public IR_Asm {
                     std::optional<int64_t> = std::nullopt);
   std::string print() override;
   RegAllocInstr to_rai() override;
+  RegAllocInstr to_rai(emitter::InstructionSet instr_set) override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
                       const AllocationResult& allocs,
                       emitter::IR_Record irec) override;

@@ -2848,7 +2848,7 @@ InstructionARM64 splat_vf(Register dst, Register src, Register::VF_ELEMENT eleme
 InstructionARM64 xor_vf(Register dst, Register src1, Register src2) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/eor_advsimd.html
   // EOR <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
-  return InstructionARM64(Base(0b0110111000100001000111, 22), Rn(src1.id()), Rm(src2.id()),
+  return InstructionARM64(Base(0b0110111000100000000111, 22), Rn(src1.id()), Rm(src2.id()),
                           Rd(dst.id()));
 }
 
@@ -2989,7 +2989,7 @@ InstructionARM64 parallel_bitwise_xor(Register dst, Register src0, Register src1
   // https://www.scs.stanford.edu/~zyedidia/arm64/eor_advsimd.html
   // - vector, 16B
   // EOR <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
-  return InstructionARM64(Base(0b0110111000100001000111, 22), Rn(src0.id()), Rm(src1.id()),
+  return InstructionARM64(Base(0b0110111000100000000111, 22), Rn(src0.id()), Rm(src1.id()),
                           Rd(dst.id()));
 }
 
@@ -3135,8 +3135,20 @@ InstructionARM64 vpsrldq(Register dst, Register src, u8 imm) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/ext_advsimd.html
   // - 16B
   // EXT <Vd>.<T>, <Vn>.<T>, <Vm>.<T>, #<index>
-  return InstructionARM64(Base(0b0110111000000000000000, 22), Rn(src.id()), Rm(src.id()),
-                          Rd(dst.id()), Imm4(imm));
+  // EXT is fed by an explicit zero vector so this is a zero-fill shift, not
+  // the circular source/source form. V16 is reserved as the scratch vector.
+  ASSERT(imm < 16);
+  if (imm == 0) {
+    return InstructionARM64(Base(0b0110111000000000000000, 22), Rn(src.id()), Rm(src.id()),
+                            Rd(dst.id()), Imm4(imm));
+  }
+  ASSERT(dst != V16);
+  ASSERT(src != V16);
+  return InstructionARM64({
+      parallel_bitwise_xor(V16, V16, V16),
+      InstructionARM64(Base(0b0110111000000000000000, 22), Rn(src.id()), Rm(V16), Rd(dst.id()),
+                        Imm4(imm)),
+  });
 }
 
 // shift-left-logical-entire-simd-reg
@@ -3144,8 +3156,19 @@ InstructionARM64 vpslldq(Register dst, Register src, u8 imm) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/ext_advsimd.html
   // - 16B
   // EXT <Vd>.<T>, <Vn>.<T>, <Vm>.<T>, #<index>
-  return InstructionARM64(Base(0b0110111000000000000000, 22), Rn(src.id()), Rm(src.id()),
-                          Rd(dst.id()), Imm4((16 - imm) & 0xF));
+  // As above, use zero + src to implement the x86 zero-fill semantics.
+  ASSERT(imm < 16);
+  if (imm == 0) {
+    return InstructionARM64(Base(0b0110111000000000000000, 22), Rn(src.id()), Rm(src.id()),
+                            Rd(dst.id()), Imm4(0));
+  }
+  ASSERT(dst != V16);
+  ASSERT(src != V16);
+  return InstructionARM64({
+      parallel_bitwise_xor(V16, V16, V16),
+      InstructionARM64(Base(0b0110111000000000000000, 22), Rn(V16), Rm(src.id()), Rd(dst.id()),
+                        Imm4((16 - imm) & 0xF)),
+  });
 }
 
 InstructionARM64 vpshuflw(Register dst, Register src, u8 imm) {
@@ -3215,11 +3238,15 @@ InstructionARM64 vpshufhw(Register dst, Register src, u8 imm) {
 InstructionARM64 vpackuswb(Register dst, Register src0, Register src1) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/sqxtun_advsimd.html
   // SQXTUN{2} <Vd>.<Tb>, <Vn>.<Ta>
+  // Use V16 as a scratch destination so dst may alias either source, as it can
+  // on x86.  The IR allocator excludes this register for the ARM opcode.
+  ASSERT(dst != V16);
   return InstructionARM64({
       // sqxtun  vDst.8b,  vSrc0.8h
-      InstructionARM64(Base(0b0010111000100001001010, 22), Rn(src0.id()), Rd(dst.id())),
+      InstructionARM64(Base(0b0010111000100001001010, 22), Rn(src0.id()), Rd(V16)),
       // sqxtun2 vDst.16b, vSrc1.8h
-      InstructionARM64(Base(0b0110111000100001001010, 22), Rn(src1.id()), Rd(dst.id())),
+      InstructionARM64(Base(0b0110111000100001001010, 22), Rn(src1.id()), Rd(V16)),
+      mov_vf_vf(dst, V16),
   });
 }
 }  // namespace ARM64

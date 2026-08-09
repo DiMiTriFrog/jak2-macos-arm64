@@ -1,5 +1,6 @@
 #include "IR.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "common/symbols.h"
@@ -2291,6 +2292,15 @@ RegAllocInstr IR_Int128Math3Asm::to_rai() {
   return rai;
 }
 
+RegAllocInstr IR_Int128Math3Asm::to_rai(emitter::InstructionSet instr_set) {
+  auto rai = to_rai();
+  if (instr_set == emitter::InstructionSet::ARM64 && m_kind == Kind::PACKUSWB) {
+    // ARM64 vpackuswb packs through V16 so dst may alias either source.
+    rai.exclude.push_back(emitter::X16);
+  }
+  return rai;
+}
+
 void IR_Int128Math3Asm::do_codegen_x86(emitter::ObjectGenerator* gen,
                                        const AllocationResult& allocs,
                                        emitter::IR_Record irec) {
@@ -2375,7 +2385,76 @@ void IR_Int128Math3Asm::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_Int128Math3Asm::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                          const AllocationResult& allocs,
                                          emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_Int128Math3Asm::do_codegen_arm64");
+  auto dst = get_reg_asm(m_dst, allocs, irec, m_use_coloring);
+  auto src1 = get_reg_asm(m_src1, allocs, irec, m_use_coloring);
+  auto src2 = get_reg_asm(m_src2, allocs, irec, m_use_coloring);
+
+  switch (m_kind) {
+    case Kind::PEXTUB:
+      // Keep the PS2/x86 operand order used by the swapped emitter API.
+      gen->add_instr(IGen::pextub_swapped(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PEXTUH:
+      gen->add_instr(IGen::pextuh_swapped(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PEXTUW:
+      gen->add_instr(IGen::pextuw_swapped(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PEXTLB:
+      gen->add_instr(IGen::pextlb_swapped(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PEXTLH:
+      gen->add_instr(IGen::pextlh_swapped(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PEXTLW:
+      gen->add_instr(IGen::pextlw_swapped(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PCPYLD:
+      gen->add_instr(IGen::pcpyld_swapped(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PCPYUD:
+      gen->add_instr(IGen::pcpyud(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::PSUBW:
+      // PS2 psubw is a lane-wise 32-bit subtraction in this IR.
+      gen->add_instr(IGen::vpsubd(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::PCEQB:
+      gen->add_instr(IGen::parallel_compare_e_b(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PCEQH:
+      gen->add_instr(IGen::parallel_compare_e_h(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PCEQW:
+      gen->add_instr(IGen::parallel_compare_e_w(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PCGTB:
+      gen->add_instr(IGen::parallel_compare_gt_b(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::PCGTH:
+      gen->add_instr(IGen::parallel_compare_gt_h(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::PCGTW:
+      gen->add_instr(IGen::parallel_compare_gt_w(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::POR:
+      gen->add_instr(IGen::parallel_bitwise_or(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PXOR:
+      gen->add_instr(IGen::parallel_bitwise_xor(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PAND:
+      gen->add_instr(IGen::parallel_bitwise_and(*gen, dst, src2, src1), irec);
+      break;
+    case Kind::PACKUSWB:
+      gen->add_instr(IGen::vpackuswb(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::PADDB:
+      gen->add_instr(IGen::parallel_add_byte(*gen, dst, src1, src2), irec);
+      break;
+    default:
+      ASSERT(false);
+  }
 }
 
 ///////////////////////
@@ -2521,6 +2600,19 @@ RegAllocInstr IR_Int128Math2Asm::to_rai() {
   return rai;
 }
 
+RegAllocInstr IR_Int128Math2Asm::to_rai(emitter::InstructionSet instr_set) {
+  auto rai = to_rai();
+  const bool uses_scratch =
+      m_kind == Kind::VPSHUFLW || m_kind == Kind::VPSHUFHW ||
+      ((m_kind == Kind::VPSRLDQ || m_kind == Kind::VPSLLDQ) && m_imm.has_value() &&
+       *m_imm > 0 && *m_imm < 16);
+  if (instr_set == emitter::InstructionSet::ARM64 && uses_scratch) {
+    // ARM64 byte shifts and shuffles build temporary vectors in X16/V16.
+    rai.exclude.push_back(emitter::X16);
+  }
+  return rai;
+}
+
 void IR_Int128Math2Asm::do_codegen_x86(emitter::ObjectGenerator* gen,
                                        const AllocationResult& allocs,
                                        emitter::IR_Record irec) {
@@ -2592,7 +2684,79 @@ void IR_Int128Math2Asm::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_Int128Math2Asm::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                          const AllocationResult& allocs,
                                          emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_Int128Math2Asm::do_codegen_arm64");
+  auto dst = get_reg_asm(m_dst, allocs, irec, m_use_coloring);
+  auto src = get_reg_asm(m_src, allocs, irec, m_use_coloring);
+
+  ASSERT(m_imm.has_value());
+  ASSERT(*m_imm >= 0);
+  ASSERT(*m_imm <= 255);
+  const auto imm = static_cast<u8>(*m_imm);
+
+  switch (m_kind) {
+    case Kind::PW_SLL:
+      if (imm >= 32) {
+        gen->add_instr(IGen::parallel_bitwise_xor(*gen, dst, src, src), irec);
+      } else {
+        gen->add_instr(IGen::pw_sll(*gen, dst, src, imm), irec);
+      }
+      break;
+    case Kind::PW_SRL:
+      if (imm >= 32) {
+        gen->add_instr(IGen::parallel_bitwise_xor(*gen, dst, src, src), irec);
+      } else if (imm == 0) {
+        gen->add_instr(IGen::mov_vf_vf(*gen, dst, src), irec);
+      } else {
+        gen->add_instr(IGen::pw_srl(*gen, dst, src, imm), irec);
+      }
+      break;
+    case Kind::PW_SRA:
+      if (imm == 0) {
+        gen->add_instr(IGen::mov_vf_vf(*gen, dst, src), irec);
+      } else {
+        gen->add_instr(IGen::pw_sra(*gen, dst, src, std::min<u8>(imm, 32)), irec);
+      }
+      break;
+    case Kind::PH_SLL:
+      if (imm == 0) {
+        gen->add_instr(IGen::mov_vf_vf(*gen, dst, src), irec);
+      } else if (imm >= 16) {
+        gen->add_instr(IGen::parallel_bitwise_xor(*gen, dst, src, src), irec);
+      } else {
+        gen->add_instr(IGen::ph_sll(*gen, dst, src, imm), irec);
+      }
+      break;
+    case Kind::PH_SRL:
+      if (imm == 0) {
+        gen->add_instr(IGen::mov_vf_vf(*gen, dst, src), irec);
+      } else if (imm >= 16) {
+        gen->add_instr(IGen::parallel_bitwise_xor(*gen, dst, src, src), irec);
+      } else {
+        gen->add_instr(IGen::ph_srl(*gen, dst, src, imm), irec);
+      }
+      break;
+    case Kind::VPSRLDQ:
+      if (imm >= 16) {
+        gen->add_instr(IGen::parallel_bitwise_xor(*gen, dst, src, src), irec);
+      } else {
+        gen->add_instr(IGen::vpsrldq(*gen, dst, src, imm), irec);
+      }
+      break;
+    case Kind::VPSLLDQ:
+      if (imm >= 16) {
+        gen->add_instr(IGen::parallel_bitwise_xor(*gen, dst, src, src), irec);
+      } else {
+        gen->add_instr(IGen::vpslldq(*gen, dst, src, imm), irec);
+      }
+      break;
+    case Kind::VPSHUFLW:
+      gen->add_instr(IGen::vpshuflw(*gen, dst, src, imm), irec);
+      break;
+    case Kind::VPSHUFHW:
+      gen->add_instr(IGen::vpshufhw(*gen, dst, src, imm), irec);
+      break;
+    default:
+      ASSERT(false);
+  }
 }
 
 // ---- Blend VF
