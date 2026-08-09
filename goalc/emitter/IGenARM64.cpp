@@ -3072,15 +3072,67 @@ InstructionARM64 vpslldq(Register dst, Register src, u8 imm) {
 }
 
 InstructionARM64 vpshuflw(Register dst, Register src, u8 imm) {
-  // TBL and a mov
-  ASSERT_MSG(false, "not yet implemented");
-  return InstructionARM64(0b0);
+  // x86 VPSHUFLW: the low four 16-bit words are permuted using 2 bits per
+  // word (word i = src word (imm >> 2i) & 3), the high four words are copied
+  // unchanged.  On ARM64 we use TBL with a byte index vector built in the
+  // scratch registers v16 (SIMD) and x16 (GPR); the index bytes for words 0-3
+  // come from the shuffle, and bytes 8-15 are the identity (8..15).
+  //
+  // Clobbers: v16 (SIMD scratch) and x16 (GPR scratch).  The IR backend must
+  // treat v16 as clobbered across this instruction (ARM-017).
+  ASSERT(dst.is_128bit_simd(instr_set));
+  ASSERT(src.is_128bit_simd(instr_set));
+
+  u8 sel[4];
+  for (int i = 0; i < 4; i++) {
+    sel[i] = (imm >> (2 * i)) & 3;
+  }
+  u64 d0 = 0;
+  for (int k = 0; k < 4; k++) {
+    d0 |= (u64)(2 * sel[k]) << (16 * k);
+    d0 |= (u64)(2 * sel[k] + 1) << (16 * k + 8);
+  }
+  const u64 d1 = 0x0F0E0D0C0B0A0908ull;  // bytes 8..15 = words 4..7 identity
+
+  std::vector<InstructionARM64> seq;
+  seq.push_back(mov_gpr64_u64(ARM64_REG::X16, d0));
+  seq.push_back(ins_vf_d_gpr(ARM64_REG::V16, 0, ARM64_REG::X16));
+  seq.push_back(mov_gpr64_u64(ARM64_REG::X16, d1));
+  seq.push_back(ins_vf_d_gpr(ARM64_REG::V16, 1, ARM64_REG::X16));
+  seq.push_back(InstructionARM64(Base(0b0100111000000000000000, 22), Rn(src.id()),
+                                 Rm(ARM64_REG::V16), Rd(dst.id())));
+  return InstructionARM64(seq);
 }
 
 InstructionARM64 vpshufhw(Register dst, Register src, u8 imm) {
-  // TBL and a mov
-  ASSERT_MSG(false, "not yet implemented");
-  return InstructionARM64(0b0);
+  // x86 VPSHUFHW: the high four 16-bit words are permuted (word 4+i = src word
+  // 4 + ((imm >> 2i) & 3)), the low four words are copied unchanged.  On ARM64
+  // we use TBL with a byte index vector built in v16/x16: bytes 0-7 are the
+  // identity (0..7) and bytes 8-15 come from the shuffle.
+  //
+  // Clobbers: v16 (SIMD scratch) and x16 (GPR scratch).
+  ASSERT(dst.is_128bit_simd(instr_set));
+  ASSERT(src.is_128bit_simd(instr_set));
+
+  u8 sel[4];
+  for (int i = 0; i < 4; i++) {
+    sel[i] = (imm >> (2 * i)) & 3;
+  }
+  const u64 d0 = 0x0706050403020100ull;  // bytes 0..7 = words 0..3 identity
+  u64 d1 = 0;
+  for (int k = 0; k < 4; k++) {
+    d1 |= (u64)(8 + 2 * sel[k]) << (16 * k);
+    d1 |= (u64)(8 + 2 * sel[k] + 1) << (16 * k + 8);
+  }
+
+  std::vector<InstructionARM64> seq;
+  seq.push_back(mov_gpr64_u64(ARM64_REG::X16, d0));
+  seq.push_back(ins_vf_d_gpr(ARM64_REG::V16, 0, ARM64_REG::X16));
+  seq.push_back(mov_gpr64_u64(ARM64_REG::X16, d1));
+  seq.push_back(ins_vf_d_gpr(ARM64_REG::V16, 1, ARM64_REG::X16));
+  seq.push_back(InstructionARM64(Base(0b0100111000000000000000, 22), Rn(src.id()),
+                                 Rm(ARM64_REG::V16), Rd(dst.id())));
+  return InstructionARM64(seq);
 }
 
 InstructionARM64 vpackuswb(Register dst, Register src0, Register src1) {
