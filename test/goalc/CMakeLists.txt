@@ -14,6 +14,7 @@ if(CMAKE_APPLE_SILICON_PROCESSOR STREQUAL "arm64")
         ${CMAKE_CURRENT_LIST_DIR}/test_arm64_ir_memory.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_arm64_ir_math.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_arm64_ir_asm_basic.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/test_arm64_ir_vector.cpp
         # ${CMAKE_CURRENT_LIST_DIR}/test_arithmetic.cpp
         # ${CMAKE_CURRENT_LIST_DIR}/test_collections.cpp
         # ${CMAKE_CURRENT_LIST_DIR}/test_compiler.cpp
@@ -40,6 +41,7 @@ else()
         ${CMAKE_CURRENT_LIST_DIR}/test_arm64_ir_memory.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_arm64_ir_math.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_arm64_ir_asm_basic.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/test_arm64_ir_vector.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_target_arch.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_arithmetic.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_collections.cpp

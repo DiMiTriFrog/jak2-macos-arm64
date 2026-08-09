@@ -259,7 +259,7 @@ void Compiler::color_object_file(FileEnv* env) {
     input.is_asm_function = f->is_asm_func;
     input.instr_set = m_instr_set;
     for (auto& i : f->code()) {
-      input.instructions.push_back(i->to_rai());
+      input.instructions.push_back(i->to_rai(m_instr_set));
       // input.debug_instruction_names.push_back(i->print());
     }
 

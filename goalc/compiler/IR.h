@@ -13,6 +13,13 @@ class IR {
  public:
   virtual std::string print() = 0;
   virtual RegAllocInstr to_rai() = 0;
+  // Most IR instructions have architecture-independent allocation metadata.
+  // ARM vector blend/swizzle additionally reserve emitter scratch registers,
+  // so those instructions override this architecture-aware entry point.
+  virtual RegAllocInstr to_rai(emitter::InstructionSet instr_set) {
+    (void)instr_set;
+    return to_rai();
+  }
   virtual void do_codegen_x86(emitter::ObjectGenerator* gen,
                               const AllocationResult& allocs,
                               emitter::IR_Record irec) = 0;
@@ -763,6 +770,7 @@ class IR_BlendVF : public IR_Asm {
   IR_BlendVF(bool use_color, const RegVal* dst, const RegVal* src1, const RegVal* src2, u8 mask);
   std::string print() override;
   RegAllocInstr to_rai() override;
+  RegAllocInstr to_rai(emitter::InstructionSet instr_set) override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
                       const AllocationResult& allocs,
                       emitter::IR_Record irec) override;
@@ -803,6 +811,7 @@ class IR_SwizzleVF : public IR_Asm {
   IR_SwizzleVF(bool use_color, const RegVal* dst, const RegVal* src, const u8 m_controlBytes);
   std::string print() override;
   RegAllocInstr to_rai() override;
+  RegAllocInstr to_rai(emitter::InstructionSet instr_set) override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
                       const AllocationResult& allocs,
                       emitter::IR_Record irec) override;

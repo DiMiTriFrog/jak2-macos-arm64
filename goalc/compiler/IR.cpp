@@ -2169,7 +2169,35 @@ void IR_VFMath3Asm::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_VFMath3Asm::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                      const AllocationResult& allocs,
                                      emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_VFMath3Asm::do_codegen_arm64");
+  auto dst = get_reg_asm(m_dst, allocs, irec, m_use_coloring);
+  auto src1 = get_reg_asm(m_src1, allocs, irec, m_use_coloring);
+  auto src2 = get_reg_asm(m_src2, allocs, irec, m_use_coloring);
+
+  switch (m_kind) {
+    case Kind::XOR:
+      gen->add_instr(IGen::xor_vf(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::SUB:
+      gen->add_instr(IGen::sub_vf(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::ADD:
+      gen->add_instr(IGen::add_vf(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::MUL:
+      gen->add_instr(IGen::mul_vf(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::MAX:
+      gen->add_instr(IGen::max_vf(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::MIN:
+      gen->add_instr(IGen::min_vf(*gen, dst, src1, src2), irec);
+      break;
+    case Kind::DIV:
+      gen->add_instr(IGen::div_vf(*gen, dst, src1, src2), irec);
+      break;
+    default:
+      ASSERT(false);
+  }
 }
 
 ///////////////////////
@@ -2404,7 +2432,19 @@ void IR_VFMath2Asm::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_VFMath2Asm::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                      const AllocationResult& allocs,
                                      emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_VFMath2Asm::do_codegen_arm64");
+  auto dst = get_reg_asm(m_dst, allocs, irec, m_use_coloring);
+  auto src = get_reg_asm(m_src, allocs, irec, m_use_coloring);
+
+  switch (m_kind) {
+    case Kind::ITOF:
+      gen->add_instr(IGen::itof_vf(*gen, dst, src), irec);
+      break;
+    case Kind::FTOI:
+      gen->add_instr(IGen::ftoi_vf(*gen, dst, src), irec);
+      break;
+    default:
+      ASSERT(false);
+  }
 }
 
 ///////////////////////
@@ -2579,6 +2619,16 @@ RegAllocInstr IR_BlendVF::to_rai() {
   return rai;
 }
 
+RegAllocInstr IR_BlendVF::to_rai(emitter::InstructionSet instr_set) {
+  auto rai = to_rai();
+  if (instr_set == emitter::InstructionSet::ARM64) {
+    // ARM64 blend_vf builds its selector in X16/V16.  The shared numeric
+    // register id means one exclusion protects both register classes.
+    rai.exclude.push_back(emitter::X16);
+  }
+  return rai;
+}
+
 void IR_BlendVF::do_codegen_x86(emitter::ObjectGenerator* gen,
                                 const AllocationResult& allocs,
                                 emitter::IR_Record irec) {
@@ -2591,7 +2641,10 @@ void IR_BlendVF::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_BlendVF::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                   const AllocationResult& allocs,
                                   emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_BlendVF::do_codegen_arm64");
+  auto dst = get_reg_asm(m_dst, allocs, irec, m_use_coloring);
+  auto src1 = get_reg_asm(m_src1, allocs, irec, m_use_coloring);
+  auto src2 = get_reg_asm(m_src2, allocs, irec, m_use_coloring);
+  gen->add_instr(IGen::blend_vf(*gen, dst, src1, src2, m_mask), irec);
 }
 
 // ----- Splat VF
@@ -2627,7 +2680,9 @@ void IR_SplatVF::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_SplatVF::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                   const AllocationResult& allocs,
                                   emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_SplatVF::do_codegen_arm64");
+  auto dst = get_reg_asm(m_dst, allocs, irec, m_use_coloring);
+  auto src = get_reg_asm(m_src, allocs, irec, m_use_coloring);
+  gen->add_instr(IGen::splat_vf(*gen, dst, src, m_element), irec);
 }
 
 // ---- Swizzle VF
@@ -2652,6 +2707,15 @@ RegAllocInstr IR_SwizzleVF::to_rai() {
   return rai;
 }
 
+RegAllocInstr IR_SwizzleVF::to_rai(emitter::InstructionSet instr_set) {
+  auto rai = to_rai();
+  if (instr_set == emitter::InstructionSet::ARM64) {
+    // ARM64 swizzle_vf uses X16/V16 for its byte-index table.
+    rai.exclude.push_back(emitter::X16);
+  }
+  return rai;
+}
+
 void IR_SwizzleVF::do_codegen_x86(emitter::ObjectGenerator* gen,
                                   const AllocationResult& allocs,
                                   emitter::IR_Record irec) {
@@ -2663,7 +2727,9 @@ void IR_SwizzleVF::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_SwizzleVF::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                     const AllocationResult& allocs,
                                     emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_SwizzleVF::do_codegen_arm64");
+  auto dst = get_reg_asm(m_dst, allocs, irec, m_use_coloring);
+  auto src = get_reg_asm(m_src, allocs, irec, m_use_coloring);
+  gen->add_instr(IGen::swizzle_vf(*gen, dst, src, m_controlBytes), irec);
 }
 
 // ---- Square Root VF
@@ -2696,5 +2762,7 @@ void IR_SqrtVF::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_SqrtVF::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                  const AllocationResult& allocs,
                                  emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_SqrtVF::do_codegen_arm64");
+  auto dst = get_reg_asm(m_dst, allocs, irec, m_use_coloring);
+  auto src = get_reg_asm(m_src, allocs, irec, m_use_coloring);
+  gen->add_instr(IGen::sqrt_vf(*gen, dst, src), irec);
 }

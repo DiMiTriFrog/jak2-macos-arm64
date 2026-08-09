@@ -102,7 +102,7 @@ struct IRHarness {
 #endif
 }
 
-bool link_contains(const std::vector<u8>& link, const std::string& name) {
+[[maybe_unused]] bool link_contains(const std::vector<u8>& link, const std::string& name) {
   if (name.empty()) {
     return false;
   }
