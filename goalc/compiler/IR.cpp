@@ -1737,7 +1737,8 @@ void IR_AsmRet::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_AsmRet::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                  const AllocationResult& allocs,
                                  emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_AsmRet::do_codegen_arm64");
+  (void)allocs;
+  gen->add_instr(IGen::ret(*gen), irec);
 }
 
 ///////////////////////
@@ -1764,7 +1765,11 @@ void IR_AsmFNop::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_AsmFNop::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                   const AllocationResult& allocs,
                                   emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_AsmFNop::do_codegen_arm64");
+  (void)allocs;
+  // GOAL's .nop.vf has no architectural ARM64 equivalent.  A regular NOP is
+  // the required compatibility operation: it preserves all register and
+  // floating-point state while keeping the instruction stream ordered.
+  gen->add_instr(IGen::nop_vf(*gen), irec);
 }
 
 ///////////////////////
@@ -1791,7 +1796,10 @@ void IR_AsmFWait::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_AsmFWait::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                    const AllocationResult& allocs,
                                    emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_AsmFWait::do_codegen_arm64");
+  (void)allocs;
+  // ARM64 has no x87 pending-operation state.  The emitter's compatibility
+  // implementation is a NOP, which is the only behavior observable by GOAL.
+  gen->add_instr(IGen::wait_vf(*gen), irec);
 }
 
 ///////////////////////
@@ -1825,7 +1833,8 @@ void IR_AsmPush::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_AsmPush::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                   const AllocationResult& allocs,
                                   emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_AsmPush::do_codegen_arm64");
+  auto src_reg = m_use_coloring ? get_reg(m_src, allocs, irec) : get_no_color_reg(m_src);
+  gen->add_instr(IGen::push_gpr64(*gen, src_reg), irec);
 }
 
 ///////////////////////
@@ -1859,7 +1868,8 @@ void IR_AsmPop::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_AsmPop::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                  const AllocationResult& allocs,
                                  emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_AsmPop::do_codegen_arm64");
+  auto dst_reg = m_use_coloring ? get_reg(m_dst, allocs, irec) : get_no_color_reg(m_dst);
+  gen->add_instr(IGen::pop_gpr64(*gen, dst_reg), irec);
 }
 
 ///////////////////////
@@ -1899,7 +1909,9 @@ void IR_AsmSub::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_AsmSub::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                  const AllocationResult& allocs,
                                  emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_AsmSub::do_codegen_arm64");
+  auto dst_reg = m_use_coloring ? get_reg(m_dst, allocs, irec) : get_no_color_reg(m_dst);
+  auto src_reg = m_use_coloring ? get_reg(m_src, allocs, irec) : get_no_color_reg(m_src);
+  gen->add_instr(IGen::sub_gpr64_gpr64(*gen, dst_reg, src_reg), irec);
 }
 
 ///////////////////////
@@ -1939,7 +1951,9 @@ void IR_AsmAdd::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_AsmAdd::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                  const AllocationResult& allocs,
                                  emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_AsmAdd::do_codegen_arm64");
+  auto dst_reg = m_use_coloring ? get_reg(m_dst, allocs, irec) : get_no_color_reg(m_dst);
+  auto src_reg = m_use_coloring ? get_reg(m_src, allocs, irec) : get_no_color_reg(m_src);
+  gen->add_instr(IGen::add_gpr64_gpr64(*gen, dst_reg, src_reg), irec);
 }
 
 ///////////////////////
@@ -1986,7 +2000,20 @@ void IR_GetSymbolValueAsm::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_GetSymbolValueAsm::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                             const AllocationResult& allocs,
                                             emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_GetSymbolValueAsm::do_codegen_arm64");
+  auto dst_reg = m_use_coloring ? get_reg(m_dest, allocs, irec) : get_no_color_reg(m_dest);
+  // Load the symbol's runtime address from a relocatable literal, then add
+  // the GOAL static-table base.  X16 is reserved for this linker scratch
+  // register by the ARM64 register model and is never exposed to coloring.
+  auto lit = emit_arm64_literal(gen, irec, X16);
+  gen->link_static_symbol_ptr(lit, 0, m_sym_name);
+  gen->add_instr(
+      IGen::add_gpr64_gpr64(*gen, X16, emitter::get_register_info(gen->instr_set()).get_st_reg()),
+      irec);
+  if (m_sext) {
+    gen->add_instr(IGen::load32s_gpr64_plus_s32(*gen, dst_reg, 0, X16), irec);
+  } else {
+    gen->add_instr(IGen::load32u_gpr64_plus_s32(*gen, dst_reg, 0, X16), irec);
+  }
 }
 
 ///////////////////////
@@ -2050,7 +2077,7 @@ void IR_RegSetAsm::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_RegSetAsm::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                     const AllocationResult& allocs,
                                     emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_RegSetAsm::do_codegen_arm64");
+  regset_common(gen, allocs, irec, m_dst, m_src, m_use_coloring);
 }
 
 ///////////////////////
