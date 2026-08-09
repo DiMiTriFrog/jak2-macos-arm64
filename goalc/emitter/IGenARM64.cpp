@@ -2462,13 +2462,14 @@ InstructionARM64 wait_vf() {
 
 InstructionARM64 mov_vf_vf(Register dst, Register src) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/mov_orr_advsimd_reg.html
-  // MOV <Vd>.<T>, <Vn>.<T>
+  // MOV <Vd>.<T>, <Vn>.<T>  (alias of ORR <Vd>, <Vn>, <Vn>)
   // Q 	<T>
   // 0 	8B
   // 1 	16B
   ASSERT(dst.is_128bit_simd(instr_set));
   ASSERT(src.is_128bit_simd(instr_set));
-  return InstructionARM64(Base(0b0100111010100000000111, 22), Rd(dst.id()), Rn(src.id()));
+  return InstructionARM64(Base(0b0100111010100000000111, 22), Rd(dst.id()), Rn(src.id()),
+                          Rm(src.id()));
 }
 
 InstructionARM64 loadvf_gpr64_plus_gpr64(Register dst, Register addr1, Register addr2) {
@@ -2629,39 +2630,142 @@ InstructionARM64 loadvf_rip_plus_s32(Register dest, s64 offset) {
        InstructionARM64(Base(0b0011110111, 10), Imm12(offset), Rt(dest.id()), Rn(X16))});
 }
 
+// Insert a 64-bit GPR into vector register lane d[index].  Used to build
+// scratch index/mask vectors for TBL/BSL.
+// https://www.scs.stanford.edu/~zyedidia/arm64/ins_gen_advsimd.html
+// INS <Vd>.D[<index>], <Xn>
+InstructionARM64 ins_vf_d_gpr(Register vd, u8 index, Register gpr) {
+  ASSERT(index <= 1);
+  ASSERT(vd.is_128bit_simd(instr_set));
+  ASSERT(gpr.is_gpr(instr_set));
+  u32 imm5 = (index << 4) | 8;  // 64-bit element index encoding
+  return InstructionARM64(Base(0b0100111000000000000111, 22), Rd(vd.id()), Rn(gpr.id()),
+                          Rm(imm5));
+}
+
+// Extract a 64-bit vector lane into a GPR (UMOV).  Used to return vector
+// results from CodeTester test functions.
+// https://www.scs.stanford.edu/~zyedidia/arm64/umov_advsimd.html
+// UMOV <Xd>, <Vn>.D[<index>]
+InstructionARM64 umov_gpr64_vf_d(Register gpr, Register vd, u8 index) {
+  ASSERT(index <= 1);
+  ASSERT(vd.is_128bit_simd(instr_set));
+  ASSERT(gpr.is_gpr(instr_set));
+  u32 imm5 = (index << 4) | 8;  // 64-bit element index encoding
+  return InstructionARM64(Base(0b0100111000000000001111, 22), Rd(gpr.id()), Rn(vd.id()),
+                          Rm(imm5));
+}
+
 InstructionARM64 blend_vf(Register dst, Register src1, Register src2, u8 mask) {
-  ASSERT_MSG(false, "not yet implemented");
-  return InstructionARM64(0b0);
+  // x86 VBLENDPS: for each 32-bit lane i, take src2[i] when mask bit i is set,
+  // otherwise src1[i].  On ARM64 we build the per-lane selector mask (all-ones
+  // or all-zeros per lane) in the scratch register v16 and use BSL (bitwise
+  // select): v16 = mask ? src2 : src1.
+  //
+  // Clobbers: v16 (SIMD scratch) and x16 (GPR scratch; never allocated by GOAL
+  // per the ARM-004 register model).  The IR backend must treat v16 as clobbered
+  // across this instruction (ARM-017).
+  ASSERT(!(mask & 0b11110000));
+  ASSERT(dst.is_128bit_simd(instr_set));
+  ASSERT(src1.is_128bit_simd(instr_set));
+  ASSERT(src2.is_128bit_simd(instr_set));
+
+  u64 sel[4];
+  for (int i = 0; i < 4; i++) {
+    sel[i] = (mask & (1 << i)) ? 0xFFFFFFFFull : 0x00000000ull;
+  }
+  // d[0] = lanes 0,1 ; d[1] = lanes 2,3 (little-endian byte order).
+  u64 d0 = (sel[1] << 32) | sel[0];
+  u64 d1 = (sel[3] << 32) | sel[2];
+
+  std::vector<InstructionARM64> seq;
+  seq.push_back(mov_gpr64_u64(ARM64_REG::X16, d0));
+  seq.push_back(ins_vf_d_gpr(ARM64_REG::V16, 0, ARM64_REG::X16));
+  seq.push_back(mov_gpr64_u64(ARM64_REG::X16, d1));
+  seq.push_back(ins_vf_d_gpr(ARM64_REG::V16, 1, ARM64_REG::X16));
+  // https://www.scs.stanford.edu/~zyedidia/arm64/bsl_advsimd.html
+  // BSL <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
+  seq.push_back(InstructionARM64(Base(0b0110111001100000000111, 22), Rn(src2.id()),
+                                 Rm(src1.id()), Rd(ARM64_REG::V16)));
+  seq.push_back(mov_vf_vf(dst, ARM64_REG::V16));
+  return InstructionARM64(seq);
 }
 
 InstructionARM64 swizzle_vf(Register dst, Register src, u8 controlBytes) {
-  ASSERT_MSG(false, "not yet implemented");
-  return InstructionARM64(0b0);
+  // x86 VSHUFPS with both operands equal to src: dst[i] = src[sel[i]] for each
+  // of the four 32-bit lanes, where sel[i] = (controlBytes >> (2*i)) & 3.  On
+  // ARM64 we use TBL with a byte index vector built in the scratch register
+  // v16: the source is the (single) table and the index vector holds 4*sel[i]+j
+  // for byte j of lane i.
+  //
+  // Clobbers: v16 (SIMD scratch) and x16 (GPR scratch).  The IR backend must
+  // treat v16 as clobbered across this instruction (ARM-017).
+  ASSERT(dst.is_128bit_simd(instr_set));
+  ASSERT(src.is_128bit_simd(instr_set));
+
+  u8 sel[4];
+  for (int i = 0; i < 4; i++) {
+    sel[i] = (controlBytes >> (2 * i)) & 3;
+  }
+  // Build the 16-byte index vector: byte j of lane i = 4*sel[i] + j.
+  u64 d0 = 0, d1 = 0;
+  for (int k = 0; k < 4; k++) {
+    d0 |= (u64)(4 * sel[0] + k) << (8 * k);
+    d0 |= (u64)(4 * sel[1] + k) << (32 + 8 * k);
+    d1 |= (u64)(4 * sel[2] + k) << (8 * k);
+    d1 |= (u64)(4 * sel[3] + k) << (32 + 8 * k);
+  }
+
+  std::vector<InstructionARM64> seq;
+  seq.push_back(mov_gpr64_u64(ARM64_REG::X16, d0));
+  seq.push_back(ins_vf_d_gpr(ARM64_REG::V16, 0, ARM64_REG::X16));
+  seq.push_back(mov_gpr64_u64(ARM64_REG::X16, d1));
+  seq.push_back(ins_vf_d_gpr(ARM64_REG::V16, 1, ARM64_REG::X16));
+  // https://www.scs.stanford.edu/~zyedidia/arm64/tbl_tbl.html
+  // TBL <Vd>.<T>, {<Vn>.<T>}, <Vm>.<T>
+  seq.push_back(InstructionARM64(Base(0b0100111000000000000000, 22), Rn(src.id()),
+                                 Rm(ARM64_REG::V16), Rd(dst.id())));
+  return InstructionARM64(seq);
 }
 
 InstructionARM64 shuffle_vf(Register dst, Register src, u8 dx, u8 dy, u8 dz, u8 dw) {
-  ASSERT_MSG(false, "not yet implemented");
-  return InstructionARM64(0b0);
+  // x86 packs dx,dy,dz,dw into the VSHUFPS control bytes and delegates to
+  // swizzle.  Same here.
+  ASSERT(dx < 4);
+  ASSERT(dy < 4);
+  ASSERT(dz < 4);
+  ASSERT(dw < 4);
+  u8 imm = dx + (dy << 2) + (dz << 4) + (dw << 6);
+  return swizzle_vf(dst, src, imm);
 }
 
 InstructionARM64 splat_vf(Register dst, Register src, Register::VF_ELEMENT element) {
+  // x86 splat broadcasts one lane of src to all four lanes.  NEON DUP is a
+  // single instruction for this.  Lane order is X=0, Y=1, Z=2, W=3.
+  // https://www.scs.stanford.edu/~zyedidia/arm64/dup_advsimd_elem.html
+  // DUP <Vd>.<T>, <Vn>.S[<index>]
+  ASSERT(dst.is_128bit_simd(instr_set));
+  ASSERT(src.is_128bit_simd(instr_set));
+  int lane = 0;
   switch (element) {
     case Register::VF_ELEMENT::X:
-      return swizzle_vf(dst, src, 0b00000000);
+      lane = 0;
       break;
     case Register::VF_ELEMENT::Y:
-      return swizzle_vf(dst, src, 0b01010101);
+      lane = 1;
       break;
     case Register::VF_ELEMENT::Z:
-      return swizzle_vf(dst, src, 0b10101010);
+      lane = 2;
       break;
     case Register::VF_ELEMENT::W:
-      return swizzle_vf(dst, src, 0b11111111);
+      lane = 3;
       break;
     default:
       ASSERT(false);
-      return {0};
   }
+  u32 imm5 = (lane << 3) | 4;  // 32-bit element index encoding
+  return InstructionARM64(Base(0b0100111000000000000001, 22), Rd(dst.id()), Rn(src.id()),
+                          Rm(imm5));
 }
 
 InstructionARM64 xor_vf(Register dst, Register src1, Register src2) {

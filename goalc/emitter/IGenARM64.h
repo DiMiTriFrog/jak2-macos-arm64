@@ -672,6 +672,8 @@ InstructionARM64 loadvf_rip_plus_s32(Register dest, s64 offset);
 // TODO - rip relative loads and stores.
 
 InstructionARM64 blend_vf(Register dst, Register src1, Register src2, u8 mask);
+InstructionARM64 ins_vf_d_gpr(Register vd, u8 index, Register gpr);
+InstructionARM64 umov_gpr64_vf_d(Register gpr, Register vd, u8 index);
 
 InstructionARM64 shuffle_vf(Register dst, Register src, u8 dx, u8 dy, u8 dz, u8 dw);
 

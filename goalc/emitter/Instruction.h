@@ -59,7 +59,7 @@ constexpr s64 pow2s(u64 n) {
 
 constexpr Field Hw(u32 x) {
   ASSERT(x >= 0 && x <= (4 - 1));
-  return Field{(x & 4) << 21};
+  return Field{(x & 3) << 21};
 }
 
 constexpr Field Sh(u32 x) {
@@ -114,7 +114,7 @@ constexpr Field Imm12(u32 x) {
 
 constexpr Field Imm16(u32 x) {
   ASSERT(x >= 0 && x <= (pow2(16) - 1));
-  return Field{static_cast<u32>((x & (pow2(16) - 1)) << 16)};
+  return Field{static_cast<u32>((x & (pow2(16) - 1)) << 5)};
 }
 
 constexpr Field Imm26(u32 x) {
