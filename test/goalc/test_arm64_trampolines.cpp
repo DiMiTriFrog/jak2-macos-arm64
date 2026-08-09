@@ -1,0 +1,221 @@
+#include <cstdint>
+#include <cstring>
+#include <unistd.h>
+
+#include "game/kernel/common/arm64_trampoline.h"
+#include "gtest/gtest.h"
+#include <sys/mman.h>
+
+#if defined(__aarch64__)
+
+namespace {
+
+using u64 = uint64_t;
+
+extern "C" void _arg_call_arm64() asm("_arg_call_arm64");
+extern "C" void _stack_call_arm64() asm("_stack_call_arm64");
+
+template <typename T>
+void* function_address(T* function) {
+  return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(function));
+}
+
+extern "C" u64 trampoline_add4(u64 a0, u64 a1, u64 a2, u64 a3) {
+  return a0 + a1 + a2 + a3;
+}
+
+extern "C" u64 return_fourth(u64, u64, u64, u64 a3) {
+  return a3;
+}
+
+extern "C" u64 sum_packed(const u64* args) {
+  u64 result = 0;
+  for (int i = 0; i < 8; ++i) {
+    result += args[i];
+  }
+  return result;
+}
+
+extern "C" __attribute__((naked)) u64 invoke_with_pp(void*, u64, u64, u64, u64) {
+  asm("stp x20, x30, [sp, #-16]!\n"
+      "mov x9, x0\n"
+      "mov x20, x4\n"
+      "mov x0, x1\n"
+      "mov x1, x2\n"
+      "mov x2, x3\n"
+      "blr x9\n"
+      "ldp x20, x30, [sp], #16\n"
+      "ret\n");
+}
+
+extern "C" __attribute__((naked)) u64 invoke_nothing_with_sentinel(void*) {
+  asm("stp x29, x30, [sp, #-16]!\n"
+      "mov x9, x0\n"
+      "mov x0, #0x1357\n"
+      "blr x9\n"
+      "ldp x29, x30, [sp], #16\n"
+      "ret\n");
+}
+
+class ExecutablePage {
+ public:
+  ExecutablePage() {
+    page_size_ = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+    memory_ = static_cast<u8*>(mmap(nullptr, page_size_, PROT_READ | PROT_WRITE,
+                                    MAP_ANONYMOUS | MAP_PRIVATE | MAP_JIT, -1, 0));
+    if (memory_ == MAP_FAILED) {
+      memory_ = nullptr;
+    }
+  }
+
+  ~ExecutablePage() {
+    if (memory_ != nullptr && memory_ != MAP_FAILED) {
+      EXPECT_EQ(munmap(memory_, page_size_), 0);
+    }
+  }
+
+  u8* data(size_t offset = 0) {
+    EXPECT_LE(offset, page_size_);
+    return memory_ + offset;
+  }
+
+  bool valid() const { return memory_ != nullptr; }
+
+  void make_executable(size_t code_size) {
+    arm64_trampoline::flush(memory_, code_size);
+    ASSERT_EQ(mprotect(memory_, page_size_, PROT_READ | PROT_EXEC), 0);
+  }
+
+  void make_writable() { ASSERT_EQ(mprotect(memory_, page_size_, PROT_READ | PROT_WRITE), 0); }
+
+ private:
+  u8* memory_ = nullptr;
+  size_t page_size_ = 0;
+};
+
+u32 read_word(const u8* code, size_t offset) {
+  u32 result = 0;
+  std::memcpy(&result, code + offset, sizeof(result));
+  return result;
+}
+
+u64 read_literal(const u8* code, size_t offset) {
+  u64 result = 0;
+  std::memcpy(&result, code + offset, sizeof(result));
+  return result;
+}
+
+}  // namespace
+
+TEST(ARM64Trampoline, EmitsRelocatableLiteralCall) {
+  ExecutablePage page;
+  ASSERT_TRUE(page.valid());
+  auto* code = page.data();
+  const auto target = function_address(&trampoline_add4);
+  const auto bridge = function_address(_arg_call_arm64);
+  const auto size = arm64_trampoline::emit_c_function(code, target, bridge, false);
+
+  ASSERT_EQ(size, 40u);
+  EXPECT_EQ(read_word(code, 0), arm64_trampoline::encode_ldr_literal_x16(0, 24));
+  EXPECT_EQ(read_word(code, 4), arm64_trampoline::kSubSp16);
+  EXPECT_EQ(read_word(code, 8), arm64_trampoline::kStrX16Sp);
+  EXPECT_EQ(read_word(code, 12), arm64_trampoline::encode_ldr_literal_x16(12, 32));
+  EXPECT_EQ(read_word(code, 16), arm64_trampoline::kBrX16);
+  EXPECT_EQ(read_literal(code, 24), reinterpret_cast<uint64_t>(target));
+  EXPECT_EQ(read_literal(code, 32), reinterpret_cast<uint64_t>(bridge));
+}
+
+TEST(ARM64Trampoline, CFunctionPreservesFullPointerAndArguments) {
+  ExecutablePage page;
+  ASSERT_TRUE(page.valid());
+  auto* code = page.data();
+  const auto size = arm64_trampoline::emit_c_function(code, function_address(&trampoline_add4),
+                                                      function_address(_arg_call_arm64), false);
+  page.make_executable(size);
+
+  using Function = u64 (*)(u64, u64, u64, u64);
+  auto function = reinterpret_cast<Function>(code);
+  EXPECT_EQ(function(1, 2, 3, 4), 10u);
+}
+
+TEST(ARM64Trampoline, CFunctionCanMoveProcessPointerIntoFourthArgument) {
+  ExecutablePage page;
+  ASSERT_TRUE(page.valid());
+  auto* code = page.data();
+  const auto size = arm64_trampoline::emit_c_function(code, function_address(&return_fourth),
+                                                      function_address(_arg_call_arm64), true);
+  page.make_executable(size);
+
+  using Function = u64 (*)(void*, u64, u64, u64, u64);
+  auto function = reinterpret_cast<Function>(&invoke_with_pp);
+  EXPECT_EQ(function(code, 1, 2, 3, 0xfeedfacecafebeefull), 0xfeedfacecafebeefull);
+}
+
+TEST(ARM64Trampoline, StackFunctionReceivesEightArguments) {
+  ExecutablePage page;
+  ASSERT_TRUE(page.valid());
+  auto* code = page.data();
+  const auto size = arm64_trampoline::emit_stack_function(code, function_address(&sum_packed),
+                                                          function_address(_stack_call_arm64));
+  page.make_executable(size);
+
+  using Function = u64 (*)(u64, u64, u64, u64, u64, u64, u64, u64);
+  auto function = reinterpret_cast<Function>(code);
+  EXPECT_EQ(function(1, 2, 4, 8, 16, 32, 64, 128), 255u);
+}
+
+TEST(ARM64Trampoline, NothingAndZeroHaveNativeReturns) {
+  ExecutablePage page;
+  ASSERT_TRUE(page.valid());
+  auto* nothing = page.data(0);
+  auto* zero = page.data(64);
+  const auto nothing_size = arm64_trampoline::emit_nothing(nothing);
+  const auto zero_size = arm64_trampoline::emit_zero(zero);
+  page.make_executable(64 + zero_size);
+
+  EXPECT_EQ(invoke_nothing_with_sentinel(nothing), 0x1357u);
+  EXPECT_EQ(reinterpret_cast<u64 (*)()>(zero)(), 0u);
+  EXPECT_EQ(nothing_size, 4u);
+  EXPECT_EQ(zero_size, 8u);
+}
+
+TEST(ARM64Trampoline, Mips2cLayoutKeepsFullAddressAndStackSize) {
+  ExecutablePage page;
+  ASSERT_TRUE(page.valid());
+  auto* code = page.data();
+  const auto target = function_address(&sum_packed);
+  const auto bridge = function_address(_stack_call_arm64);
+  const auto size = arm64_trampoline::emit_mips2c(code, 0x12345, target, bridge);
+
+  ASSERT_EQ(size, 56u);
+  EXPECT_EQ(read_word(code, 0), arm64_trampoline::encode_ldr_literal_x16(0, 32));
+  EXPECT_EQ(read_word(code, 16), arm64_trampoline::kStrX16Sp8);
+  EXPECT_EQ(read_literal(code, 32), 0x12345u);
+  EXPECT_EQ(read_literal(code, 40), reinterpret_cast<uint64_t>(target));
+  EXPECT_EQ(read_literal(code, 48), reinterpret_cast<uint64_t>(bridge));
+}
+
+TEST(ARM64Trampoline, RepatchesWxxAndKeepsMultipleInstancesActive) {
+  ExecutablePage page;
+  ASSERT_TRUE(page.valid());
+  auto* first = page.data(0);
+  auto* second = page.data(64);
+  const auto bridge = function_address(_arg_call_arm64);
+
+  arm64_trampoline::emit_c_function(first, function_address(&trampoline_add4), bridge, false);
+  arm64_trampoline::emit_c_function(second, function_address(&trampoline_add4), bridge, false);
+  page.make_executable(104);
+  using Function = u64 (*)(u64, u64, u64, u64);
+  EXPECT_EQ(reinterpret_cast<Function>(first)(1, 2, 3, 4), 10u);
+  EXPECT_EQ(reinterpret_cast<Function>(second)(4, 3, 2, 1), 10u);
+
+  page.make_writable();
+  arm64_trampoline::emit_c_function(first, function_address(&return_fourth), bridge, false);
+  arm64_trampoline::flush(first, 40);
+  page.make_executable(104);
+  // The old target remains in the second active instance while the first is repatched.
+  EXPECT_EQ(reinterpret_cast<Function>(second)(4, 3, 2, 1), 10u);
+  EXPECT_EQ(reinterpret_cast<Function>(first)(4, 3, 2, 99), 99u);
+}
+
+#endif
