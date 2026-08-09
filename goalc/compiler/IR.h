@@ -138,7 +138,8 @@ class IR_FunctionCall : public IR {
                   const RegVal* ret,
                   std::vector<RegVal*> args,
                   std::vector<emitter::Register> arg_regs,
-                  std::optional<emitter::Register> ret_reg);
+                  std::optional<emitter::Register> ret_reg,
+                  emitter::InstructionSet instr_set = emitter::InstructionSet::X86);
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
@@ -155,6 +156,7 @@ class IR_FunctionCall : public IR {
   std::vector<RegVal*> m_args;
   std::vector<emitter::Register> m_arg_regs;
   std::optional<emitter::Register> m_ret_reg;
+  emitter::InstructionSet m_instr_set = emitter::InstructionSet::X86;
 };
 
 class IR_RegValAddr : public IR {

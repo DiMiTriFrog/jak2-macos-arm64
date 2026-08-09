@@ -443,9 +443,9 @@ const std::vector<emitter::Register>& get_default_alloc_order_for_var_spill(int 
   ASSERT(info.reg_class != RegClass::INVALID);
   auto hw_kind = emitter::reg_class_to_hw(info.reg_class);
   if (hw_kind == emitter::HWRegKind::GPR) {
-    return emitter::gRegInfo.get_gpr_spill_alloc_order();
+    return emitter::get_register_info(cache->instr_set).get_gpr_spill_alloc_order();
   } else if (hw_kind == emitter::HWRegKind::XMM) {
-    return emitter::gRegInfo.get_xmm_spill_alloc_order();
+    return emitter::get_register_info(cache->instr_set).get_xmm_spill_alloc_order();
   } else {
     throw std::runtime_error("Unsupported HWRegKind");
   }
@@ -457,17 +457,18 @@ const std::vector<emitter::Register>& get_default_alloc_order_for_var(int v,
   auto& info = cache->iregs.at(v);
   ASSERT(info.reg_class != RegClass::INVALID);
   auto hw_kind = emitter::reg_class_to_hw(info.reg_class);
+  auto& ri = emitter::get_register_info(cache->instr_set);
   if (hw_kind == emitter::HWRegKind::GPR || hw_kind == emitter::HWRegKind::INVALID) {
     if (!get_all && cache->is_asm_func) {
-      return emitter::gRegInfo.get_gpr_temp_alloc_order();
+      return ri.get_gpr_temp_alloc_order();
     } else {
-      return emitter::gRegInfo.get_gpr_alloc_order();
+      return ri.get_gpr_alloc_order();
     }
   } else if (hw_kind == emitter::HWRegKind::XMM) {
     if (!get_all && cache->is_asm_func) {
-      return emitter::gRegInfo.get_xmm_temp_alloc_order();
+      return ri.get_xmm_temp_alloc_order();
     } else {
-      return emitter::gRegInfo.get_xmm_alloc_order();
+      return ri.get_xmm_alloc_order();
     }
   } else {
     throw std::runtime_error("Unsupported HWRegKind");
@@ -779,6 +780,7 @@ AllocationResult allocate_registers(const AllocationInput& input) {
   AllocationResult result;
   RegAllocCache cache;
   cache.is_asm_func = input.is_asm_function;
+  cache.instr_set = input.instr_set;
 
   // if desired, print input for debugging.
   if (input.debug_settings.print_input) {
@@ -817,7 +819,7 @@ AllocationResult allocate_registers(const AllocationInput& input) {
   result.stack_slots_for_vars = input.stack_slots_for_stack_vars;
 
   // check for use of saved registers
-  for (auto sr : emitter::gRegInfo.get_all_saved()) {
+  for (auto sr : emitter::get_register_info(cache.instr_set).get_all_saved()) {
     bool uses_sr = false;
     for (auto& lr : cache.live_ranges) {
       for (int instr_idx = lr.min; instr_idx <= lr.max; instr_idx++) {

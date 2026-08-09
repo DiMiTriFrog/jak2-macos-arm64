@@ -164,6 +164,8 @@ struct AllocationInput {
 
   std::string function_name;
 
+  emitter::InstructionSet instr_set = emitter::InstructionSet::X86;
+
   int allocator_version = 1;
 
   struct {

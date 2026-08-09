@@ -302,12 +302,76 @@ std::vector<emitter::Register> allowable_local_var_move_elim = {
     emitter::XMM1,  emitter::XMM0,  emitter::XMM8,  emitter::XMM9, emitter::XMM10, emitter::XMM11,
     emitter::XMM12, emitter::XMM13, emitter::XMM14, emitter::XMM15};
 
+// ARM64 equivalents of the x86 order tables above.  x16, x17, x18, x29, x30
+// and sp are intentionally absent (x18 is reserved by the platform).
+AssignmentOrder ARM64_REG_saved_first_order = {
+    {emitter::V8,  emitter::V9,  emitter::V10, emitter::V11, emitter::V12, emitter::V13,
+     emitter::V14, emitter::V15, emitter::V7,  emitter::V6,  emitter::V5,  emitter::V4,
+     emitter::V3,  emitter::V2,  emitter::V1,  emitter::V0},
+    {emitter::X19, emitter::X20, emitter::X21, emitter::X22, emitter::X23, emitter::X24,
+     emitter::X25, emitter::X26, emitter::X27, emitter::X28, emitter::X0,  emitter::X1,
+     emitter::X2,  emitter::X3,  emitter::X4,  emitter::X5,  emitter::X6,  emitter::X7,
+     emitter::X8,  emitter::X9,  emitter::X10, emitter::X11, emitter::X12, emitter::X13,
+     emitter::X14, emitter::X15}};
+
+AssignmentOrder ARM64_REG_temp_first_order = {
+    {emitter::V7,  emitter::V6,  emitter::V5,  emitter::V4,  emitter::V3,  emitter::V2,
+     emitter::V1,  emitter::V0,  emitter::V8,  emitter::V9,  emitter::V10, emitter::V11,
+     emitter::V12, emitter::V13, emitter::V14, emitter::V15},
+    {emitter::X0,  emitter::X1,  emitter::X2,  emitter::X3,  emitter::X4,  emitter::X5,
+     emitter::X6,  emitter::X7,  emitter::X8,  emitter::X9,  emitter::X10, emitter::X11,
+     emitter::X12, emitter::X13, emitter::X14, emitter::X15, emitter::X19, emitter::X20,
+     emitter::X21, emitter::X22, emitter::X23, emitter::X24, emitter::X25, emitter::X26,
+     emitter::X27, emitter::X28}};
+
+AssignmentOrder ARM64_REG_extra_hard_order = {
+    {emitter::V7, emitter::V6, emitter::V5, emitter::V4, emitter::V3, emitter::V2, emitter::V1,
+     emitter::V0, emitter::V8, emitter::V9},
+    {emitter::X0, emitter::X1, emitter::X2, emitter::X3, emitter::X8, emitter::X9}};
+
+AssignmentOrder ARM64_REG_temp_only_order = {{emitter::V7,  emitter::V6,  emitter::V5,  emitter::V4,
+                                              emitter::V3,  emitter::V2,  emitter::V1,  emitter::V0},
+                                             {emitter::X0,  emitter::X1,  emitter::X2,  emitter::X3,
+                                              emitter::X4,  emitter::X5,  emitter::X6,  emitter::X7,
+                                              emitter::X8,  emitter::X9,  emitter::X10, emitter::X11,
+                                              emitter::X12, emitter::X13, emitter::X14, emitter::X15}};
+
+std::vector<emitter::Register> allowable_local_var_move_elim_arm64 = {
+    emitter::X0,  emitter::X1,  emitter::X2,  emitter::X3,  emitter::X4,  emitter::X5,  emitter::X6,
+    emitter::X7,  emitter::X8,  emitter::X9,  emitter::X10, emitter::X11, emitter::X12, emitter::X13,
+    emitter::X14, emitter::X15, emitter::X19, emitter::X20, emitter::X21, emitter::X22, emitter::X23,
+    emitter::X24, emitter::X25, emitter::X26, emitter::X27, emitter::X28, emitter::V0,  emitter::V1,
+    emitter::V2,  emitter::V3,  emitter::V4,  emitter::V5,  emitter::V6,  emitter::V7,  emitter::V8,
+    emitter::V9,  emitter::V10, emitter::V11, emitter::V12, emitter::V13, emitter::V14, emitter::V15,
+    emitter::V16, emitter::V17, emitter::V18, emitter::V19, emitter::V20, emitter::V21, emitter::V22,
+    emitter::V23, emitter::V24, emitter::V25, emitter::V26, emitter::V27, emitter::V28, emitter::V29,
+    emitter::V30, emitter::V31};
+
+const std::vector<emitter::Register>& get_allowable_move_elim(const AllocationInput& in) {
+  if (in.instr_set == emitter::InstructionSet::ARM64) {
+    return allowable_local_var_move_elim_arm64;
+  }
+  return allowable_local_var_move_elim;
+}
+
 const std::vector<emitter::Register>& get_alloc_order(int var_idx,
                                                       const AllocationInput& in,
                                                       const RACache& cache,
                                                       bool saved_first) {
   bool is_gpr =
       emitter::reg_class_to_hw(cache.iregs.at(var_idx).reg_class) == emitter::HWRegKind::GPR;
+  if (in.instr_set == emitter::InstructionSet::ARM64) {
+    if (in.is_asm_function) {
+      return is_gpr ? ARM64_REG_temp_only_order.gprs : ARM64_REG_temp_only_order.xmms;
+    }
+    if (torture_test_spills) {
+      return is_gpr ? ARM64_REG_extra_hard_order.gprs : ARM64_REG_extra_hard_order.xmms;
+    }
+    if (saved_first) {
+      return is_gpr ? ARM64_REG_saved_first_order.gprs : ARM64_REG_saved_first_order.xmms;
+    }
+    return is_gpr ? ARM64_REG_temp_first_order.gprs : ARM64_REG_temp_first_order.xmms;
+  }
   if (in.is_asm_function) {
     if (is_gpr) {
       return REG_temp_only_order.gprs;
@@ -890,7 +954,7 @@ loop_top:
       auto& check_other_var = cache->vars.at(check_other_reg);
       if (check_other_var.assigned_to_reg()) {
         auto reg = check_other_var.reg();
-        if (vector_contains(allowable_local_var_move_elim, reg)) {
+        if (vector_contains(get_allowable_move_elim(input), reg)) {
           if (check_register_assign_at(input, *cache, var_idx, instr_idx, reg)) {
             var.set_stack_slot_reg(reg, instr_idx);
             bonus.reg = reg;
@@ -1012,7 +1076,7 @@ bool run_assignment_on_var(const AllocationInput& input,
       const auto& other_var = cache->vars.at(other_live_var_idx);
       if (other_var.assigned_to_reg() &&
           safe_overlap(input, *cache, var, other_var, var.first_live())) {
-        if (vector_contains(allowable_local_var_move_elim, other_var.reg())) {
+        if (vector_contains(get_allowable_move_elim(input), other_var.reg())) {
           bool worked = check_register_assign(input, *cache, var_idx, other_var.reg());
           if (trace) {
             lg::print("m0 trying var {} in {}: {}\n", cache->iregs.at(var_idx).to_string(),
@@ -1040,7 +1104,7 @@ bool run_assignment_on_var(const AllocationInput& input,
 
       if (other_var.assigned_to_reg() &&
           safe_overlap(input, *cache, var, other_var, var.last_live())) {
-        if (vector_contains(allowable_local_var_move_elim, other_var.reg())) {
+        if (vector_contains(get_allowable_move_elim(input), other_var.reg())) {
           bool worked = check_register_assign(input, *cache, var_idx, other_var.reg());
           if (trace) {
             lg::print("m1 trying var {} in {}: {}\n", cache->iregs.at(var_idx).to_string(),
@@ -1182,7 +1246,7 @@ AllocationResult allocate_registers_v2(const AllocationInput& input) {
   result.stack_slots_for_vars = input.stack_slots_for_stack_vars;
 
   // check for use of saved registers
-  for (auto sr : emitter::gRegInfo.get_all_saved()) {
+  for (auto sr : emitter::get_register_info(input.instr_set).get_all_saved()) {
     bool uses_sr = false;
     for (auto& lr : cache.vars) {
       for (int instr_idx = lr.first_live(); instr_idx <= lr.last_live(); instr_idx++) {

@@ -12,7 +12,11 @@ struct CallingConvention {
   std::optional<emitter::Register> return_reg;
 };
 
-std::vector<emitter::Register> get_arg_registers(const TypeSystem& type_system,
-                                                 const std::vector<TypeSpec>& arg_types);
-CallingConvention get_function_calling_convention(const TypeSpec& function_type,
-                                                  const TypeSystem& type_system);
+std::vector<emitter::Register> get_arg_registers(
+    const TypeSystem& type_system,
+    const std::vector<TypeSpec>& arg_types,
+    emitter::InstructionSet instr_set = emitter::InstructionSet::X86);
+CallingConvention get_function_calling_convention(
+    const TypeSpec& function_type,
+    const TypeSystem& type_system,
+    emitter::InstructionSet instr_set = emitter::InstructionSet::X86);

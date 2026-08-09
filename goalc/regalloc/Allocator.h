@@ -213,6 +213,7 @@ struct RegAllocCache {
   int current_stack_slot = 0;
   bool used_stack = false;
   bool is_asm_func = false;
+  emitter::InstructionSet instr_set = emitter::InstructionSet::X86;
 
   struct Stats {
     int num_spill_ops = 0;

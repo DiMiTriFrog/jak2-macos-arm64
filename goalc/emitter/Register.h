@@ -230,7 +230,8 @@ class RegisterInfo {
 
   static_assert(N_REGS - 1 == XMM15, "bad register count");
 
-  static RegisterInfo make_register_info();
+  static RegisterInfo make_register_info(emitter::InstructionSet instr_set =
+                                             emitter::InstructionSet::X86);
 
   struct Info {
     bool saved = false;    // does the callee save it?
@@ -240,40 +241,64 @@ class RegisterInfo {
     bool temp() const { return !saved && !special; }
   };
 
+  // The flat info table.  For x86_64 this is the only table and holds both GPR
+  // and XMM entries (XMMs live at ids XMM0..XMM15).  For ARM64 the GPRs and
+  // SIMD registers share the same numeric id space, so GPR info lives here and
+  // SIMD info lives in m_info_simd (see get_simd_info).
   const Info& get_info(Register r) const { return m_info.at(r.id()); }
+
+  // SIMD/vector register info, only distinct from get_info for ARM64 where V0
+  // and X0 share an id.
+  const Info& get_simd_info(Register r) const { return m_info_simd.at(r.id()); }
+
   Register get_gpr_arg_reg(int id) const { return m_gpr_arg_regs.at(id); }
   Register get_xmm_arg_reg(int id) const { return m_xmm_arg_regs.at(id); }
   Register get_saved_gpr(int id) const { return m_saved_gprs.at(id); }
   Register get_saved_xmm(int id) const { return m_saved_xmms.at(id); }
-  Register get_process_reg() const { return R13; }
-  Register get_st_reg() const { return R14; }
-  Register get_offset_reg() const { return R15; }
-  Register get_gpr_ret_reg() const { return RAX; }
-  Register get_xmm_ret_reg() const { return XMM0; }
-  const std::vector<Register>& get_gpr_alloc_order() { return m_gpr_alloc_order; }
-  const std::vector<Register>& get_xmm_alloc_order() { return m_xmm_alloc_order; }
-  const std::vector<Register>& get_gpr_temp_alloc_order() { return m_gpr_temp_only_alloc_order; }
-  const std::vector<Register>& get_xmm_temp_alloc_order() { return m_xmm_temp_only_alloc_order; }
-  const std::vector<Register>& get_gpr_spill_alloc_order() { return m_gpr_spill_temp_alloc_order; }
-  const std::vector<Register>& get_xmm_spill_alloc_order() { return m_xmm_spill_temp_alloc_order; }
-  const std::array<Register, N_SAVED_XMMS + N_SAVED_GPRS>& get_all_saved() { return m_saved_all; }
+  Register get_process_reg() const { return m_process_reg; }
+  Register get_st_reg() const { return m_st_reg; }
+  Register get_offset_reg() const { return m_offset_reg; }
+  Register get_gpr_ret_reg() const { return m_gpr_ret_reg; }
+  Register get_xmm_ret_reg() const { return m_xmm_ret_reg; }
+  const std::vector<Register>& get_gpr_alloc_order() const { return m_gpr_alloc_order; }
+  const std::vector<Register>& get_xmm_alloc_order() const { return m_xmm_alloc_order; }
+  const std::vector<Register>& get_gpr_temp_alloc_order() const { return m_gpr_temp_only_alloc_order; }
+  const std::vector<Register>& get_xmm_temp_alloc_order() const { return m_xmm_temp_only_alloc_order; }
+  const std::vector<Register>& get_gpr_spill_alloc_order() const { return m_gpr_spill_temp_alloc_order; }
+  const std::vector<Register>& get_xmm_spill_alloc_order() const { return m_xmm_spill_temp_alloc_order; }
+  const std::vector<Register>& get_all_saved() const { return m_saved_all; }
 
  private:
   RegisterInfo() = default;
   std::array<Info, N_REGS> m_info;
+  std::array<Info, N_REGS> m_info_simd;
   std::array<Register, N_ARGS> m_gpr_arg_regs;
   std::array<Register, N_ARGS> m_xmm_arg_regs;
-  std::array<Register, N_SAVED_GPRS> m_saved_gprs;
-  std::array<Register, N_SAVED_XMMS> m_saved_xmms;
-  std::array<Register, N_SAVED_XMMS + N_SAVED_GPRS> m_saved_all;
+  std::vector<Register> m_saved_gprs;
+  std::vector<Register> m_saved_xmms;
+  std::vector<Register> m_saved_all;
   std::vector<Register> m_gpr_alloc_order;
   std::vector<Register> m_xmm_alloc_order;
   std::vector<Register> m_gpr_temp_only_alloc_order;
   std::vector<Register> m_xmm_temp_only_alloc_order;
   std::vector<Register> m_gpr_spill_temp_alloc_order;
   std::vector<Register> m_xmm_spill_temp_alloc_order;
+  Register m_process_reg;
+  Register m_st_reg;
+  Register m_offset_reg;
+  Register m_gpr_ret_reg;
+  Register m_xmm_ret_reg;
 };
 
 extern RegisterInfo gRegInfo;
+extern RegisterInfo gRegInfoARM64;
+
+// Select the RegisterInfo for the active target architecture.
+inline const RegisterInfo& get_register_info(emitter::InstructionSet instr_set) {
+  if (instr_set == emitter::InstructionSet::ARM64) {
+    return gRegInfoARM64;
+  }
+  return gRegInfo;
+}
 
 }  // namespace emitter

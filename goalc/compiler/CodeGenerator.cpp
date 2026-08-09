@@ -194,7 +194,7 @@ void CodeGenerator::do_goal_function_x86(FunctionEnv* env, int f_idx) {
   auto f_rec = m_gen.get_existing_function_record(f_idx);
   // todo, extra alignment settings
 
-  auto& ri = emitter::gRegInfo;
+  auto& ri = emitter::get_register_info(m_gen.instr_set());
   const auto& allocs = env->alloc_result();
 
   // compute how much stack we will use
