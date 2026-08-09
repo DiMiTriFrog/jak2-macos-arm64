@@ -914,7 +914,91 @@ void IR_IntegerMath::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_IntegerMath::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                       const AllocationResult& allocs,
                                       emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_IntegerMath::do_codegen_arm64");
+  auto dest_reg = get_reg(m_dest, allocs, irec);
+  switch (m_kind) {
+    case IntegerMathKind::ADD_64:
+      gen->add_instr(IGen::add_gpr64_gpr64(*gen, dest_reg, get_reg(m_arg, allocs, irec)), irec);
+      break;
+    case IntegerMathKind::SUB_64:
+      gen->add_instr(IGen::sub_gpr64_gpr64(*gen, dest_reg, get_reg(m_arg, allocs, irec)), irec);
+      break;
+    case IntegerMathKind::AND_64:
+      gen->add_instr(IGen::and_gpr64_gpr64(*gen, dest_reg, get_reg(m_arg, allocs, irec)), irec);
+      break;
+    case IntegerMathKind::OR_64:
+      gen->add_instr(IGen::or_gpr64_gpr64(*gen, dest_reg, get_reg(m_arg, allocs, irec)), irec);
+      break;
+    case IntegerMathKind::XOR_64:
+      gen->add_instr(IGen::xor_gpr64_gpr64(*gen, dest_reg, get_reg(m_arg, allocs, irec)), irec);
+      break;
+    case IntegerMathKind::NOT_64:
+      ASSERT(!m_arg);
+      gen->add_instr(IGen::not_gpr64(*gen, dest_reg), irec);
+      break;
+    case IntegerMathKind::SHLV_64:
+      gen->add_instr(IGen::shl_gpr64_reg(*gen, dest_reg, get_reg(m_arg, allocs, irec)), irec);
+      break;
+    case IntegerMathKind::SHRV_64:
+      gen->add_instr(IGen::shr_gpr64_reg(*gen, dest_reg, get_reg(m_arg, allocs, irec)), irec);
+      break;
+    case IntegerMathKind::SARV_64:
+      gen->add_instr(IGen::sar_gpr64_reg(*gen, dest_reg, get_reg(m_arg, allocs, irec)), irec);
+      break;
+    case IntegerMathKind::SHL_64:
+      gen->add_instr(IGen::mov_gpr64_u64(*gen, X16, m_shift_amount), irec);
+      gen->add_instr(IGen::shl_gpr64_reg(*gen, dest_reg, X16), irec);
+      break;
+    case IntegerMathKind::SHR_64:
+      gen->add_instr(IGen::mov_gpr64_u64(*gen, X16, m_shift_amount), irec);
+      gen->add_instr(IGen::shr_gpr64_reg(*gen, dest_reg, X16), irec);
+      break;
+    case IntegerMathKind::SAR_64:
+      gen->add_instr(IGen::mov_gpr64_u64(*gen, X16, m_shift_amount), irec);
+      gen->add_instr(IGen::sar_gpr64_reg(*gen, dest_reg, X16), irec);
+      break;
+    case IntegerMathKind::IMUL_32:
+      gen->add_instr(IGen::imul_gpr32_gpr32(*gen, dest_reg, get_reg(m_arg, allocs, irec)), irec);
+      gen->add_instr(IGen::movsx_r64_r32(*gen, dest_reg, dest_reg), irec);
+      break;
+    case IntegerMathKind::IMUL_64:
+      gen->add_instr(IGen::imul_gpr64_gpr64(*gen, dest_reg, get_reg(m_arg, allocs, irec)), irec);
+      break;
+    case IntegerMathKind::IDIV_32:
+    case IntegerMathKind::UDIV_32: {
+      auto arg_reg = get_reg(m_arg, allocs, irec);
+      gen->add_instr(IGen::mov_gpr64_gpr64(*gen, X17, arg_reg), irec);
+      gen->add_instr(IGen::mov_gpr64_gpr64(*gen, X0, dest_reg), irec);
+      if (m_kind == IntegerMathKind::IDIV_32) {
+        gen->add_instr(IGen::idiv_gpr32(*gen, X17), irec);
+      } else {
+        gen->add_instr(IGen::unsigned_div_gpr32(*gen, X17), irec);
+      }
+      gen->add_instr(IGen::movsx_r64_r32(*gen, dest_reg, X0), irec);
+      break;
+    }
+    case IntegerMathKind::IMOD_32:
+    case IntegerMathKind::UMOD_32: {
+      auto arg_reg = get_reg(m_arg, allocs, irec);
+      // Preserve the low 32-bit dividend and divisor across the implicit-W0 divide.
+      gen->add_instr(IGen::mov_gpr64_gpr64(*gen, X16, dest_reg), irec);
+      gen->add_instr(IGen::mov_gpr64_gpr64(*gen, X17, arg_reg), irec);
+      gen->add_instr(IGen::mov_gpr64_gpr64(*gen, X0, X16), irec);
+      if (m_kind == IntegerMathKind::IMOD_32) {
+        gen->add_instr(IGen::idiv_gpr32(*gen, X17), irec);
+      } else {
+        gen->add_instr(IGen::unsigned_div_gpr32(*gen, X17), irec);
+      }
+      // The quotient is in W0. Reconstruct the remainder in the low 32 bits, then
+      // sign-extend it just as the x86 backend does for both signed and unsigned modulo.
+      gen->add_instr(IGen::mov_gpr64_gpr64(*gen, dest_reg, X0), irec);
+      gen->add_instr(IGen::imul_gpr32_gpr32(*gen, dest_reg, X17), irec);
+      gen->add_instr(IGen::sub_gpr64_gpr64(*gen, X16, dest_reg), irec);
+      gen->add_instr(IGen::movsx_r64_r32(*gen, dest_reg, X16), irec);
+      break;
+    }
+    default:
+      throw std::runtime_error("Unsupported IntegerMathKind");
+  }
 }
 
 /////////////////////
@@ -1001,7 +1085,33 @@ void IR_FloatMath::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_FloatMath::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                     const AllocationResult& allocs,
                                     emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_FloatMath::do_codegen_arm64");
+  auto dest_reg = get_reg(m_dest, allocs, irec);
+  auto arg_reg = get_reg(m_arg, allocs, irec);
+  switch (m_kind) {
+    case FloatMathKind::DIV_SS:
+      gen->add_instr(IGen::div_f32_f32(*gen, dest_reg, arg_reg), irec);
+      break;
+    case FloatMathKind::MUL_SS:
+      gen->add_instr(IGen::mul_f32_f32(*gen, dest_reg, arg_reg), irec);
+      break;
+    case FloatMathKind::ADD_SS:
+      gen->add_instr(IGen::add_f32_f32(*gen, dest_reg, arg_reg), irec);
+      break;
+    case FloatMathKind::SUB_SS:
+      gen->add_instr(IGen::sub_f32_f32(*gen, dest_reg, arg_reg), irec);
+      break;
+    case FloatMathKind::MIN_SS:
+      gen->add_instr(IGen::min_f32_f32(*gen, dest_reg, arg_reg), irec);
+      break;
+    case FloatMathKind::MAX_SS:
+      gen->add_instr(IGen::max_f32_f32(*gen, dest_reg, arg_reg), irec);
+      break;
+    case FloatMathKind::SQRT_SS:
+      gen->add_instr(IGen::sqrt_f32(*gen, dest_reg, arg_reg), irec);
+      break;
+    default:
+      throw std::runtime_error("Unsupported FloatMathKind");
+  }
 }
 
 /////////////////////
@@ -1479,7 +1589,12 @@ void IR_FloatToInt::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_FloatToInt::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                      const AllocationResult& allocs,
                                      emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_FloatToInt::do_codegen_arm64");
+  auto dest_reg = get_reg(m_dest, allocs, irec);
+  auto src_reg = get_reg(m_src, allocs, irec);
+  // FCVTZS truncates toward zero. ARM64 defines NaN as zero and saturates finite overflow
+  // and infinities; keep that ISA-defined contract explicit for this ARM-only implementation.
+  gen->add_instr(IGen::f32_to_int32(*gen, dest_reg, src_reg), irec);
+  gen->add_instr(IGen::movsx_r64_r32(*gen, dest_reg, dest_reg), irec);
 }
 
 ///////////////////////
@@ -1509,7 +1624,8 @@ void IR_IntToFloat::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_IntToFloat::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                      const AllocationResult& allocs,
                                      emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_IntToFloat::do_codegen_arm64");
+  gen->add_instr(
+      IGen::int32_to_f32(*gen, get_reg(m_dest, allocs, irec), get_reg(m_src, allocs, irec)), irec);
 }
 
 ///////////////////////
