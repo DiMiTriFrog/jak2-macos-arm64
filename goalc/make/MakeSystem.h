@@ -3,6 +3,7 @@
 #include "common/goos/Interpreter.h"
 #include "common/util/FileUtil.h"
 
+#include "goalc/emitter/InstructionSet.h"
 #include "goalc/make/Tool.h"
 
 struct MakeStep {
@@ -16,7 +17,9 @@ struct MakeStep {
 
 class MakeSystem {
  public:
-  MakeSystem(const std::optional<REPL::Config> repl_config, const std::string& username = "#f");
+  MakeSystem(const std::optional<REPL::Config> repl_config,
+             const std::string& username = "#f",
+             emitter::InstructionSet instr_set = emitter::InstructionSet::X86);
   void load_project_file(const std::string& file_path);
 
   goos::Object handle_defstep(const goos::Object& obj,
@@ -74,7 +77,10 @@ class MakeSystem {
   std::vector<std::string> get_loaded_projects() const { return m_loaded_projects; }
 
   /*!
-   * Get the prefix that the project has requested for all compiler outputs
+   * Get the prefix that the project has requested for all compiler outputs.
+   * The target architecture suffix (e.g. "-arm64") is applied by
+   * handle_set_output_prefix, so all output paths (objects, DGOs, tools) are
+   * automatically separated by architecture.
    */
   const std::string& compiler_output_prefix() const { return m_path_map.output_prefix; }
 
@@ -98,6 +104,7 @@ class MakeSystem {
   std::unordered_map<std::string, std::shared_ptr<MakeStep>> m_output_to_step;
   std::unordered_map<std::string, std::shared_ptr<Tool>> m_tools;
   PathMap m_path_map;
+  emitter::InstructionSet m_instr_set = emitter::InstructionSet::X86;
   std::vector<std::string> m_gsrc_folder;
   std::map<std::string, std::string> m_gsrc_files = {};
 };

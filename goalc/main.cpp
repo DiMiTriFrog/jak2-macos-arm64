@@ -14,6 +14,7 @@
 
 #include "goalc/compiler/Compiler.h"
 #include "goalc/debugger/DebugServer.h"
+#include "goalc/emitter/InstructionSet.h"
 
 #include "fmt/color.h"
 #include "fmt/format.h"
@@ -37,6 +38,7 @@ int main(int argc, char** argv) {
   std::string cmd = "";
   std::string username = "#f";
   std::string game = "jak1";
+  std::string target_arch = "x86_64";
   int nrepl_port = -1;
   int debug_port = -1;
   fs::path project_path_override;
@@ -55,6 +57,8 @@ int main(int argc, char** argv) {
   app.add_flag("--user-auto", auto_find_user,
                "Attempt to automatically deduce the user, overrides '--user'");
   app.add_option("-g,--game", game, "The game name: 'jak1' or 'jak2'");
+  app.add_option("--target-arch", target_arch,
+                 "The target architecture for compiled GOAL code: 'x86_64' (default) or 'arm64'");
   app.add_option("--proj-path", project_path_override,
                  "Specify the location of the 'data/' folder");
   app.add_option("--iso-path", iso_path_override, "Specify the location of the 'iso_data/' folder");
@@ -63,6 +67,14 @@ int main(int argc, char** argv) {
   CLI11_PARSE(app, argc, argv);
 
   GameVersion game_version = game_name_to_version(game);
+
+  emitter::InstructionSet instr_set;
+  try {
+    instr_set = emitter::parse_instruction_set(target_arch);
+  } catch (const std::exception& e) {
+    lg::error("Error: {}", e.what());
+    return 1;
+  }
 
   if (!project_path_override.empty()) {
     if (!fs::exists(project_path_override)) {
@@ -110,7 +122,7 @@ int main(int argc, char** argv) {
   // if a command is provided on the command line, no REPL just run the compiler on it
   try {
     if (!cmd.empty()) {
-      compiler = std::make_unique<Compiler>(game_version, emitter::InstructionSet::X86);
+      compiler = std::make_unique<Compiler>(game_version, instr_set);
       compiler->run_front_end_on_string(cmd);
       return 0;
     }
@@ -143,7 +155,7 @@ int main(int argc, char** argv) {
   // the compiler may throw an exception if it fails to load its standard library.
   try {
     compiler = std::make_unique<Compiler>(
-        game_version, emitter::InstructionSet::X86, std::make_optional(repl_config), username,
+        game_version, instr_set, std::make_optional(repl_config), username,
         std::make_unique<REPL::Wrapper>(username, repl_config, startup_file, nrepl_server_ok));
 
     if (debug_server_ok) {
@@ -181,7 +193,7 @@ int main(int argc, char** argv) {
           compiler->save_repl_history();
         }
         compiler = std::make_unique<Compiler>(
-            game_version, emitter::InstructionSet::X86, std::make_optional(repl_config), username,
+            game_version, instr_set, std::make_optional(repl_config), username,
             std::make_unique<REPL::Wrapper>(username, repl_config, startup_file, nrepl_server_ok));
         if (debug_server_ok) {
           debug_server.set_compiler(compiler.get(), &compiler_mutex);

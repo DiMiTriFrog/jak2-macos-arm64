@@ -39,8 +39,10 @@ std::string MakeStep::print() const {
   return result;
 }
 
-MakeSystem::MakeSystem(const std::optional<REPL::Config> repl_config, const std::string& username)
-    : m_goos(username), m_repl_config(repl_config) {
+MakeSystem::MakeSystem(const std::optional<REPL::Config> repl_config,
+                       const std::string& username,
+                       emitter::InstructionSet instr_set)
+    : m_goos(username), m_repl_config(repl_config), m_instr_set(instr_set) {
   m_goos.register_form("defstep", [=](const goos::Object& obj, goos::Arguments& args,
                                       const std::shared_ptr<goos::EnvironmentObject>& env) {
     return handle_defstep(obj, args, env);
@@ -274,7 +276,16 @@ goos::Object MakeSystem::handle_set_output_prefix(
     const std::shared_ptr<goos::EnvironmentObject>& env) {
   m_goos.eval_args(&args, env);
   va_check(form, args, {goos::ObjectType::STRING}, {});
-  m_path_map.output_prefix = args.unnamed.at(0).as_string()->data;
+  auto prefix = args.unnamed.at(0).as_string()->data;
+  auto suffix = emitter::output_suffix(m_instr_set);
+  if (suffix[0] && !prefix.empty() && prefix.back() == '/') {
+    prefix.pop_back();
+    prefix += suffix;
+    prefix += '/';
+  } else {
+    prefix += suffix;
+  }
+  m_path_map.output_prefix = prefix;
   return goos::Object::make_empty_list();
 }
 

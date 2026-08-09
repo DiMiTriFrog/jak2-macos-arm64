@@ -29,7 +29,7 @@ Compiler::Compiler(GameVersion version,
       m_instr_set(instr_set),
       m_goos(user_profile),
       m_debugger(&m_listener, &m_goos.reader, version),
-      m_make(repl_config, user_profile),
+      m_make(repl_config, user_profile, instr_set),
       m_repl(std::move(repl)),
       m_symbol_info(&m_goos.reader.db) {
   m_listener.add_debugger(&m_debugger);

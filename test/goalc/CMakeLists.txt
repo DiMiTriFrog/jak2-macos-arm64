@@ -18,6 +18,7 @@ if(CMAKE_APPLE_SILICON_PROCESSOR STREQUAL "arm64")
         # ${CMAKE_CURRENT_LIST_DIR}/test_with_game.cpp
         # ${CMAKE_CURRENT_LIST_DIR}/test_type_consistency.cpp
         # ${CMAKE_CURRENT_LIST_DIR}/test_vector_float.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/test_target_arch.cpp
     )
 else()
     set(GOALC_TEST_CASES
@@ -25,6 +26,7 @@ else()
         ${CMAKE_CURRENT_LIST_DIR}/test_goal_kernel2.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_goal_kernel3.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_CodeTester.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/test_target_arch.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_arithmetic.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_collections.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_compiler.cpp
