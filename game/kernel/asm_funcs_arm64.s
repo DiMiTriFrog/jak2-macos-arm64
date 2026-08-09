@@ -14,9 +14,12 @@
 .global _arg_call_arm64
 .align 4
 _arg_call_arm64:
+  ;; ARM trampolines reserve one aligned 16-byte slot containing the target
+  ;; address at [sp]. Consume it before creating the bridge frame.
+  ldr x8, [sp]
+  add sp, sp, #16
   stp	x29, x30, [sp, #-16]!
   mov	x29, sp
-  ldr x8, [sp], #16
 
   ; Putting an exclamation point after the close-bracket 
   ; means that the calculated effective address is written back to the base register. (pre-indexing)
@@ -28,9 +31,9 @@ _arg_call_arm64:
   blr x8
 
   ldp q9, q8, [sp], #32
-  ldp q10, q11, [sp], #32
-  ldp q12, q13, [sp], #32
-  ldp q14, q15, [sp], #32
+  ldp q11, q10, [sp], #32
+  ldp q13, q12, [sp], #32
+  ldp q15, q14, [sp], #32
 
   ldp	x29, x30, [sp], #16
   ret
@@ -45,9 +48,11 @@ _arg_call_arm64:
 .global _stack_call_arm64
 .align 4
 _stack_call_arm64:
+  ;; The target address is stored in an aligned 16-byte trampoline slot.
+  ldr x8, [sp]
+  add sp, sp, #16
   stp	x29, x30, [sp, #-16]!
   mov	x29, sp
-  ldr x8, [sp], #16
 
   stp q15, q14, [sp, #-32]!
   stp q13, q12, [sp, #-32]!
@@ -68,20 +73,23 @@ _stack_call_arm64:
   stp x3, x2, [sp, #-16]!
   stp x1, x0, [sp, #-16]!
 
-  ; set first argument
-  mov x19, sp
+  ; set first argument to the packed eight-word argument array
+  mov x0, sp
   ; call function
   blr x8
+  ; Preserve the callee's return value while restoring the packed registers.
+  mov x8, x0
   ; restore arguments
   ldp x1, x0, [sp], #16
   ldp x3, x2, [sp], #16
   ldp x5, x4, [sp], #16
   ldp x7, x6, [sp], #16
+  mov x0, x8
 
   ldp q9, q8, [sp], #32
-  ldp q10, q11, [sp], #32
-  ldp q12, q13, [sp], #32
-  ldp q14, q15, [sp], #32
+  ldp q11, q10, [sp], #32
+  ldp q13, q12, [sp], #32
+  ldp q15, q14, [sp], #32
 
   ldp	x29, x30, [sp], #16
   ; return!
@@ -95,14 +103,10 @@ _stack_call_arm64:
 _mips2c_call_arm64:
   stp	x29, x30, [sp, #-16]!
   mov	x29, sp
-  ;; TODO - this is really weird using half an XMM, this makes the arm assembly
-  ;; more difficult - this probably isn't required for arm?
-  ;; grab the address to call and put it in xmm0
-  ;; TODO - this stack pointer manipulation might be a problem for ARM64 which requires 16byte alignment
-  ;; sub sp, 8
-  ldr q0, [sp, #+16]
-  ;; grab the stack offset
-  ldr x0, [sp, #+8]
+  ;; ARM trampolines reserve an aligned pair: stack size at [sp+16] and
+  ;; execution address at [sp+24] after the frame is installed.
+  ldr x8, [sp, #+16]
+  ldr x9, [sp, #+24]
 
   ;; first, save quadword registers
   stp q15, q14, [sp, #-32]!
@@ -127,34 +131,33 @@ _mips2c_call_arm64:
   str x21, [sp, #+368] ;; s6 (pp) (R13 in x86) and s7 (st) (R14 in x86)
 
   mov x0, sp ; move the stack pointer to arg 0
-  sub x0, x0, x22 ; R15 is a "special" offset TODO - whats special about it?
+  ;; The GOAL call contract supplies the R15-compatible offset in x22.
+  sub x0, x0, x22
   str x0, [sp, #+464] ;; mip2c code's MIPS stack
 
   mov x0, sp ;; move the stack pointer to the new position
 
-  sub sp, sp, x8 ;; allocate space on the stack for GOAL fake stack
-  stp x8, x8, [sp, #-16]! ;; and remember this so we can find our way back
-
-  ;; TODO - this used to be a movq rax, xmm0
-  ;; TODO - not sure why an `xmm` was used because that movq only uses the lower 64bits anyway
-  mov x0, v0.d[0] ; represents the lower 64 bits of q0
-  blr x8 ;; call!
+  ;; Keep the fake GOAL stack aligned even if a caller supplies a non-aligned
+  ;; byte count. Save both the original size and the rounded allocation.
+  add x10, x8, #15
+  and x10, x10, #-16
+  sub sp, sp, x10
+  stp x8, x10, [sp, #-16]!
+  blr x9 ;; call!
 
   ;; unallocate
-  ldp x8, x8, [sp], #16
-  add sp, sp, x8
-
-  ldr x8, [sp, #+32]
+  ldp x8, x10, [sp], #16
+  add sp, sp, x10
 
   add sp, sp, 1280 ; reset the stackpointer back
 
   ldp q9, q8, [sp], #32
-  ldp q10, q11, [sp], #32
-  ldp q12, q13, [sp], #32
-  ldp q14, q15, [sp], #32
+  ldp q11, q10, [sp], #32
+  ldp q13, q12, [sp], #32
+  ldp q15, q14, [sp], #32
 
-  add sp, sp, 24 ;; 16 for the stuff pushed by trampoline
   ldp	x29, x30, [sp], #16
+  add sp, sp, #16 ;; discard the trampoline's size/address pair
   ret
 
 ;; The _call_goal_asm function is used to call a GOAL function from C.
@@ -258,13 +261,15 @@ _call_goal_on_stack_asm_arm64:
   ;; saved registers we need to modify for GOAL should be preserved
   ; ARM64 requires 16-byte stack pointer alignment
   stp x20, x21, [sp, #-16]!
-  ;; also stash the current stack pointer on the stack
-  ;; NOTE - you cannot directly store or load the `sp` register in arm64
+  str x22, [sp, #-16]!
+  ;; Save the old stack pointer in the new stack. It must be below the
+  ;; callee's entry SP so the callee's own prologue cannot overwrite it.
   mov x9, sp
-  stp x22, x9, [sp, #-16]!
 
   ;; switch to new stack
   mov sp, x0
+  sub sp, sp, #16
+  str x9, [sp]
 
   mov x20, x4 ;; set GOAL function pointer  
   mov x21, x4 ;; symbol table
@@ -272,9 +277,10 @@ _call_goal_on_stack_asm_arm64:
   ;; call GOAL by function pointer
   blr x3
 
-  ;; restore registers
-  ldp x22, x9, [sp], #16
+  ;; Restore the old stack before loading the saved callee-saved registers.
+  ldr x9, [sp], #16
   mov sp, x9
+  ldr x22, [sp], #16
   ldp x20, x21, [sp], #16
   ldp	x29, x30, [sp], #16
   ret
