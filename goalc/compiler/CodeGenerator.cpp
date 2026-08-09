@@ -400,7 +400,116 @@ void CodeGenerator::do_goal_function_x86(FunctionEnv* env, int f_idx) {
 }
 
 void CodeGenerator::do_goal_function_arm64(FunctionEnv* env, int f_idx) {
-  throw std::runtime_error("NYI - CodeGenerator::do_goal_function_arm64");
+  auto* debug = &m_debug_info->function_by_name(env->name());
+  auto f_rec = m_gen.get_existing_function_record(f_idx);
+  const auto& allocs = env->alloc_result();
+
+  // Register is intentionally a single ID type on ARM64: X8 and V8, for
+  // example, both have ID 8.  The allocator's saved-register list is ordered
+  // as X19..X28 followed by V8..V15, so classify it by the ABI ranges rather
+  // than by Register::is_gpr/is_128bit_simd (both are true for ARM IDs).
+  std::vector<Register> saved_gprs;
+  std::vector<Register> saved_simd;
+  for (const auto& saved_reg : allocs.used_saved_regs) {
+    if (saved_reg.id() >= X19 && saved_reg.id() <= X28) {
+      saved_gprs.push_back(saved_reg);
+    } else if (saved_reg.id() >= V8 && saved_reg.id() <= V15) {
+      saved_simd.push_back(saved_reg);
+    } else {
+      throw std::runtime_error(fmt::format("ARM64 function {} has an invalid saved register {}.",
+                                           env->name(), saved_reg.id()));
+    }
+  }
+
+  // X30 is the link register.  Saving it for every GOAL function gives leaf
+  // and non-leaf functions one identical ABI frame and makes the epilogue
+  // independent of whether a later IR optimization introduces a call.
+  m_gen.add_instr_no_ir(f_rec, IGen::push_gpr64(m_gen, X30), InstructionInfo::Kind::PROLOGUE);
+  for (const auto& saved_reg : saved_gprs) {
+    m_gen.add_instr_no_ir(f_rec, IGen::push_gpr64(m_gen, saved_reg),
+                          InstructionInfo::Kind::PROLOGUE);
+  }
+
+  const int spill_and_var_bytes =
+      GPR_SIZE * (allocs.stack_slots_for_spills + allocs.stack_slots_for_vars);
+  // Spill slots are addressed from the final SP.  Round their area up instead
+  // of adding an unpaired 8-byte adjustment: SP remains 16-byte aligned at all
+  // call boundaries and the unused tail is explicit padding.
+  const int spill_area_bytes = (spill_and_var_bytes + 15) & ~15;
+  const int simd_save_bytes = int(saved_simd.size()) * 16;
+  const int frame_area_bytes = spill_area_bytes + simd_save_bytes;
+
+  if (frame_area_bytes) {
+    m_gen.add_instr_no_ir(f_rec, IGen::sub_gpr64_imm(m_gen, SP, frame_area_bytes),
+                          InstructionInfo::Kind::PROLOGUE);
+  }
+
+  for (size_t i = 0; i < saved_simd.size(); i++) {
+    const int offset = spill_area_bytes + int(i) * 16;
+    m_gen.add_instr_no_ir(f_rec,
+                          IGen::store128_xmm128_reg_offset(m_gen, SP, saved_simd.at(i), offset),
+                          InstructionInfo::Kind::PROLOGUE);
+  }
+
+  debug->stack_usage = 16 * (1 + int(saved_gprs.size())) + frame_area_bytes;
+  ASSERT(debug->stack_usage.value() % 16 == 0);
+
+  auto emit_stack_ops = [&](const StackOp& bonus, IR_Record i_rec, bool load) {
+    for (const auto& op : bonus.ops) {
+      if ((load && !op.load) || (!load && !op.store)) {
+        continue;
+      }
+      const int offset = allocs.get_slot_for_spill(op.slot) * GPR_SIZE;
+      if (op.reg_class == RegClass::GPR_64) {
+        if (load) {
+          m_gen.add_instr(IGen::load64_gpr64_plus_s32(m_gen, op.reg, offset, SP), i_rec);
+        } else {
+          m_gen.add_instr(IGen::store64_gpr64_plus_s32(m_gen, SP, offset, op.reg), i_rec);
+        }
+      } else if (op.reg_class == RegClass::FLOAT) {
+        if (load) {
+          m_gen.add_instr(IGen::load_reg_offset_xmm32(m_gen, op.reg, SP, offset), i_rec);
+        } else {
+          m_gen.add_instr(IGen::store_reg_offset_xmm32(m_gen, SP, op.reg, offset), i_rec);
+        }
+      } else if (op.reg_class == RegClass::VECTOR_FLOAT || op.reg_class == RegClass::INT_128) {
+        if (load) {
+          m_gen.add_instr(IGen::load128_xmm128_reg_offset(m_gen, op.reg, SP, offset), i_rec);
+        } else {
+          m_gen.add_instr(IGen::store128_xmm128_reg_offset(m_gen, SP, op.reg, offset), i_rec);
+        }
+      } else {
+        throw std::runtime_error(
+            fmt::format("ARM64 function {} has an unsupported spill class.", env->name()));
+      }
+    }
+  };
+
+  for (int ir_idx = 0; ir_idx < int(env->code().size()); ir_idx++) {
+    auto& ir = env->code().at(ir_idx);
+    auto i_rec = m_gen.add_ir(f_rec);
+    const auto& bonus = allocs.stack_ops.at(ir_idx);
+    emit_stack_ops(bonus, i_rec, true);
+    ir->do_codegen_arm64(&m_gen, allocs, i_rec);
+    emit_stack_ops(bonus, i_rec, false);
+  }
+
+  for (int i = int(saved_simd.size()); i-- > 0;) {
+    const int offset = spill_area_bytes + i * 16;
+    m_gen.add_instr_no_ir(f_rec,
+                          IGen::load128_xmm128_reg_offset(m_gen, saved_simd.at(i), SP, offset),
+                          InstructionInfo::Kind::EPILOGUE);
+  }
+  if (frame_area_bytes) {
+    m_gen.add_instr_no_ir(f_rec, IGen::add_gpr64_imm(m_gen, SP, frame_area_bytes),
+                          InstructionInfo::Kind::EPILOGUE);
+  }
+  for (int i = int(saved_gprs.size()); i-- > 0;) {
+    m_gen.add_instr_no_ir(f_rec, IGen::pop_gpr64(m_gen, saved_gprs.at(i)),
+                          InstructionInfo::Kind::EPILOGUE);
+  }
+  m_gen.add_instr_no_ir(f_rec, IGen::pop_gpr64(m_gen, X30), InstructionInfo::Kind::EPILOGUE);
+  m_gen.add_instr_no_ir(f_rec, IGen::ret(m_gen), InstructionInfo::Kind::EPILOGUE);
 }
 
 void CodeGenerator::do_asm_function_x86(FunctionEnv* env, int f_idx, bool allow_saved_regs) {
@@ -444,5 +553,36 @@ void CodeGenerator::do_asm_function_x86(FunctionEnv* env, int f_idx, bool allow_
 }
 
 void CodeGenerator::do_asm_function_arm64(FunctionEnv* env, int f_idx, bool allow_saved_regs) {
-  throw std::runtime_error("NYI - CodeGenerator::do_asm_function");
+  auto f_rec = m_gen.get_existing_function_record(f_idx);
+  const auto& allocs = env->alloc_result();
+
+  if (!allow_saved_regs && !allocs.used_saved_regs.empty()) {
+    std::string err = fmt::format(
+        "ASM Function {}'s coloring using the following callee-saved registers: ", env->name());
+    for (const auto& x : allocs.used_saved_regs) {
+      err += x.print();
+      err += " ";
+    }
+    err.pop_back();
+    err.push_back('.');
+    throw std::runtime_error(err);
+  }
+  if (allocs.stack_slots_for_spills) {
+    throw std::runtime_error("ASM Function has used the stack for spills.");
+  }
+  if (allocs.stack_slots_for_vars) {
+    throw std::runtime_error("ASM Function has variables on the stack.");
+  }
+
+  // asm-func has always owned its own prologue/epilogue.  In particular, an
+  // asm body may contain .ret and .push/.pop directives, so do not surround it
+  // with an implicit frame here; this mirrors the x86 contract exactly.
+  for (int ir_idx = 0; ir_idx < int(env->code().size()); ir_idx++) {
+    auto& ir = env->code().at(ir_idx);
+    auto i_rec = m_gen.add_ir(f_rec);
+    if (!allocs.stack_ops.at(ir_idx).ops.empty()) {
+      throw std::runtime_error("ASM Function used a bonus op.");
+    }
+    ir->do_codegen_arm64(&m_gen, allocs, i_rec);
+  }
 }

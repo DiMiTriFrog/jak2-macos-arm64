@@ -978,7 +978,6 @@ InstructionARM64 store64_gpr64_gpr64_plus_gpr64_plus_s32(Register addr1,
 InstructionARM64 load64_gpr64_plus_s32(Register dst_reg, int32_t offset, Register src_reg) {
   ASSERT(dst_reg.is_gpr(instr_set));
   ASSERT(src_reg.is_gpr(instr_set));
-  ASSERT(src_reg != SP);
   ASSERT(offset >= INT32_MIN && offset <= INT32_MAX);
   std::vector<InstructionARM64> instrs = {
       // https://www.scs.stanford.edu/~zyedidia/arm64/add_addsub_imm.html
@@ -1006,7 +1005,6 @@ InstructionARM64 load64_gpr64_plus_s32(Register dst_reg, int32_t offset, Registe
 InstructionARM64 load32s_gpr64_plus_s32(Register dst_reg, int32_t offset, Register src_reg) {
   ASSERT(dst_reg.is_gpr(instr_set));
   ASSERT(src_reg.is_gpr(instr_set));
-  ASSERT(src_reg != SP);
   ASSERT(offset >= INT32_MIN && offset <= INT32_MAX);
   std::vector<InstructionARM64> instrs = {
       // ADD <Xd|SP>, <Xn|SP>, #<imm>{, <shift>}
@@ -1030,7 +1028,6 @@ InstructionARM64 load32s_gpr64_plus_s32(Register dst_reg, int32_t offset, Regist
 InstructionARM64 load32u_gpr64_plus_s32(Register dst_reg, int32_t offset, Register src_reg) {
   ASSERT(dst_reg.is_gpr(instr_set));
   ASSERT(src_reg.is_gpr(instr_set));
-  ASSERT(src_reg != SP);
   ASSERT(offset >= INT32_MIN && offset <= INT32_MAX);
   std::vector<InstructionARM64> instrs = {
       // ADD <Xd|SP>, <Xn|SP>, #<imm>{, <shift>}
@@ -1053,7 +1050,6 @@ InstructionARM64 load32u_gpr64_plus_s32(Register dst_reg, int32_t offset, Regist
 InstructionARM64 store32_gpr64_plus_s32(Register addr, int32_t offset, Register value) {
   ASSERT(value.is_gpr(instr_set));
   ASSERT(addr.is_gpr(instr_set));
-  ASSERT(addr != SP);
   ASSERT(offset >= INT32_MIN && offset <= INT32_MAX);
   std::vector<InstructionARM64> instrs = {
       // ADD <Xd|SP>, <Xn|SP>, #<imm>{, <shift>}
@@ -1076,7 +1072,6 @@ InstructionARM64 store32_gpr64_plus_s32(Register addr, int32_t offset, Register 
 InstructionARM64 store64_gpr64_plus_s32(Register addr, int32_t offset, Register value) {
   ASSERT(value.is_gpr(instr_set));
   ASSERT(addr.is_gpr(instr_set));
-  ASSERT(addr != SP);
   ASSERT(offset >= INT32_MIN && offset <= INT32_MAX);
   std::vector<InstructionARM64> instrs = {
       // https://www.scs.stanford.edu/~zyedidia/arm64/add_addsub_imm.html
