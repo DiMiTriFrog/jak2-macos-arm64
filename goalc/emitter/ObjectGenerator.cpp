@@ -19,6 +19,10 @@
 #include "common/type_system/TypeSystem.h"
 #include "common/versions/versions.h"
 
+#include "goalc/emitter/Relocation.h"
+
+#include "fmt/format.h"
+
 #include "goalc/debugger/DebugInfo.h"
 
 namespace emitter {
@@ -329,6 +333,7 @@ void ObjectGenerator::link_instruction_to_function(const InstructionRecord& inst
  * after memory layout is done and before link tables are generated
  */
 void ObjectGenerator::handle_temp_static_type_links(int seg) {
+
   for (const auto& type_links : m_static_type_temp_links_by_seg.at(seg)) {
     const auto& type_name = type_links.first;
     for (const auto& link : type_links.second) {
@@ -346,6 +351,7 @@ void ObjectGenerator::handle_temp_static_type_links(int seg) {
  * after memory layout is done and before link tables are generated
  */
 void ObjectGenerator::handle_temp_static_sym_links(int seg) {
+
   for (const auto& sym_links : m_static_sym_temp_links_by_seg.at(seg)) {
     const auto& sym_name = sym_links.first;
     for (const auto& link : sym_links.second) {
@@ -361,6 +367,7 @@ void ObjectGenerator::handle_temp_static_sym_links(int seg) {
  * m_static_temp_ptr_links_by_seg -> m_pointer_links_by_seg
  */
 void ObjectGenerator::handle_temp_static_ptr_links(int seg) {
+
   for (const auto& link : m_static_data_temp_ptr_links_by_seg.at(seg)) {
     const auto& source_object = m_static_data_by_seg.at(seg).at(link.source.static_id);
     const auto& dest_object = m_static_data_by_seg.at(seg).at(link.dest.static_id);
@@ -389,14 +396,33 @@ void ObjectGenerator::handle_temp_static_ptr_links(int seg) {
  */
 void ObjectGenerator::handle_temp_jump_links(int seg) {
   for (const auto& link : m_jump_temp_links_by_seg.at(seg)) {
-    // we need to compute three offsets, all relative to the start of data.
-    // 1). the location of the patch (the immediate of the opcode)
-    // 2). the value of RIP at the jump (the instruction after the jump, on x86)
-    // 3). the value of RIP we want
     const auto& function = m_function_data_by_seg.at(seg).at(link.jump_instr.func_id);
     ASSERT(link.jump_instr.func_id == link.dest.func_id);
     ASSERT(link.jump_instr.seg == seg);
     ASSERT(link.dest.seg == seg);
+
+    if (m_instruction_set == InstructionSet::ARM64) {
+      // ARM64 within-function jumps are B/BL with a 26-bit signed word offset,
+      // patched directly in the instruction word (no x86 imm/disp offsets).
+      const auto& jump_instr = function.instructions.at(link.jump_instr.instr_id);
+      int patch_location = function.instruction_to_byte_in_data.at(link.jump_instr.instr_id);
+      int source_pc = patch_location;
+      int dest_pc =
+          function.instruction_to_byte_in_data.at(function.ir_to_instruction.at(link.dest.ir_id));
+      std::string err;
+      if (!apply_relocation(RelocationType::Arm64Branch26, m_data_by_seg.at(seg).data(),
+                            patch_location, source_pc, dest_pc, 0, &err)) {
+        throw std::runtime_error(fmt::format("ARM64 jump link in {} at offset {} failed: {}",
+                                             function.debug ? function.debug->name : "?",
+                                             patch_location, err));
+      }
+      continue;
+    }
+
+    // we need to compute three offsets, all relative to the start of data.
+    // 1). the location of the patch (the immediate of the opcode)
+    // 2). the value of RIP at the jump (the instruction after the jump, on x86)
+    // 3). the value of RIP we want
     const auto& jump_instr = function.instructions.at(link.jump_instr.instr_id);
     ASSERT(jump_instr.get_imm_size() == 4);
 
@@ -421,6 +447,12 @@ void ObjectGenerator::handle_temp_jump_links(int seg) {
  * after memory layout is done and before link tables are generated
  */
 void ObjectGenerator::handle_temp_instr_sym_links(int seg) {
+  // The RIP-relative / instruction-embedded link kinds are x86-specific and the
+  // ARM64 equivalents need an approved persistent format (ADR-0008).  Fail
+  // loudly instead of silently writing x86-shaped links for ARM64 objects.
+  if (m_instruction_set == InstructionSet::ARM64 && !m_symbol_instr_temp_links_by_seg.at(seg).empty()) {
+    throw std::runtime_error("ARM64 object requested an x86 RIP/symbol-instruction link");
+  }
   for (const auto& links : m_symbol_instr_temp_links_by_seg.at(seg)) {
     const auto& sym_name = links.first;
     for (const auto& link : links.second) {
@@ -441,6 +473,12 @@ void ObjectGenerator::handle_temp_instr_sym_links(int seg) {
 }
 
 void ObjectGenerator::handle_temp_rip_func_links(int seg) {
+  // The RIP-relative / instruction-embedded link kinds are x86-specific and the
+  // ARM64 equivalents need an approved persistent format (ADR-0008).  Fail
+  // loudly instead of silently writing x86-shaped links for ARM64 objects.
+  if (m_instruction_set == InstructionSet::ARM64 && !m_rip_data_temp_links_by_seg.at(seg).empty()) {
+    throw std::runtime_error("ARM64 object requested an x86 RIP/symbol-instruction link");
+  }
   for (const auto& link : m_rip_func_temp_links_by_seg.at(seg)) {
     RipLink result;
     result.instr = link.instr;
@@ -452,6 +490,12 @@ void ObjectGenerator::handle_temp_rip_func_links(int seg) {
 }
 
 void ObjectGenerator::handle_temp_rip_data_links(int seg) {
+  // The RIP-relative / instruction-embedded link kinds are x86-specific and the
+  // ARM64 equivalents need an approved persistent format (ADR-0008).  Fail
+  // loudly instead of silently writing x86-shaped links for ARM64 objects.
+  if (m_instruction_set == InstructionSet::ARM64 && !m_rip_func_temp_links_by_seg.at(seg).empty()) {
+    throw std::runtime_error("ARM64 object requested an x86 RIP/symbol-instruction link");
+  }
   for (const auto& link : m_rip_data_temp_links_by_seg.at(seg)) {
     RipLink result;
     result.instr = link.instr;
@@ -473,6 +517,7 @@ uint32_t push_data(const T& data, std::vector<u8>& v) {
 }  // namespace
 
 void ObjectGenerator::emit_link_type_pointer(int seg, const TypeSystem* ts) {
+
   auto& out = m_link_by_seg.at(seg);
   for (auto& rec : m_type_ptr_links_by_seg.at(seg)) {
     u32 size = rec.second.size();
@@ -514,6 +559,7 @@ void ObjectGenerator::emit_link_type_pointer(int seg, const TypeSystem* ts) {
 }
 
 void ObjectGenerator::emit_link_symbol(int seg) {
+
   auto& out = m_link_by_seg.at(seg);
   for (auto& rec : m_sym_links_by_seg.at(seg)) {
     out.push_back(LINK_SYMBOL_OFFSET);
@@ -532,6 +578,7 @@ void ObjectGenerator::emit_link_symbol(int seg) {
 }
 
 void ObjectGenerator::emit_link_ptr(int seg) {
+
   auto& out = m_link_by_seg.at(seg);
   for (auto& rec : m_pointer_links_by_seg.at(seg)) {
     out.push_back(LINK_PTR);
@@ -543,6 +590,12 @@ void ObjectGenerator::emit_link_ptr(int seg) {
 }
 
 void ObjectGenerator::emit_link_rip(int seg) {
+  // The RIP-relative / instruction-embedded link kinds are x86-specific and the
+  // ARM64 equivalents need an approved persistent format (ADR-0008).  Fail
+  // loudly instead of silently writing x86-shaped links for ARM64 objects.
+  if (m_instruction_set == InstructionSet::ARM64 && !m_rip_links_by_seg.at(seg).empty()) {
+    throw std::runtime_error("ARM64 object requested an x86 RIP/symbol-instruction link");
+  }
   auto& out = m_link_by_seg.at(seg);
   for (auto& rec : m_rip_links_by_seg.at(seg)) {
     // kind (u8)
