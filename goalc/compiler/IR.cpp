@@ -506,7 +506,9 @@ void IR_GotoLabel::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_GotoLabel::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                     const AllocationResult& allocs,
                                     emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_GotoLabel::do_codegen_arm64");
+  (void)allocs;
+  auto instr = gen->add_instr(IGen::jmp_imm(*gen), irec);
+  gen->link_instruction_jump(instr, gen->get_future_ir_record_in_same_func(irec, m_dest->idx));
 }
 
 void IR_GotoLabel::resolve(const Label* dest) {
@@ -601,7 +603,12 @@ void IR_FunctionCall::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_FunctionCall::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                        const AllocationResult& allocs,
                                        emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_FunctionCall::do_codegen_arm64");
+  auto freg = get_reg(m_func, allocs, irec);
+  // GOAL function pointers are stored offset-relative; add the offset register.
+  gen->add_instr(IGen::add_gpr64_gpr64(*gen, freg,
+                                       emitter::get_register_info(gen->instr_set()).get_offset_reg()),
+                 irec);
+  gen->add_instr(IGen::call_r64(*gen, freg), irec);
 }
 
 /////////////////////
@@ -1147,7 +1154,59 @@ void IR_ConditionalBranch::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_ConditionalBranch::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                             const AllocationResult& allocs,
                                             emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_ConditionalBranch::do_codegen_arm64");
+  Instruction jump_instr = InstructionARM64(0);
+  ASSERT(m_resolved);
+  switch (condition.kind) {
+    case ConditionKind::EQUAL:
+      jump_instr = IGen::ARM64::je_imm();
+      break;
+    case ConditionKind::NOT_EQUAL:
+      jump_instr = IGen::ARM64::jne_imm();
+      break;
+    case ConditionKind::LEQ:
+      if (condition.is_signed) {
+        jump_instr = IGen::ARM64::jle_imm();
+      } else {
+        jump_instr = IGen::ARM64::jbe_imm();
+      }
+      break;
+    case ConditionKind::GEQ:
+      if (condition.is_signed) {
+        jump_instr = IGen::ARM64::jge_imm();
+      } else {
+        jump_instr = IGen::ARM64::jae_imm();
+      }
+      break;
+    case ConditionKind::LT:
+      if (condition.is_signed) {
+        jump_instr = IGen::ARM64::jl_imm();
+      } else {
+        jump_instr = IGen::ARM64::jb_imm();
+      }
+      break;
+    case ConditionKind::GT:
+      if (condition.is_signed) {
+        jump_instr = IGen::ARM64::jg_imm();
+      } else {
+        jump_instr = IGen::ARM64::ja_imm();
+      }
+      break;
+    default:
+      ASSERT(false);
+  }
+
+  if (condition.is_float) {
+    gen->add_instr(IGen::cmp_f32_f32(*gen, get_reg(condition.a, allocs, irec),
+                                     get_reg(condition.b, allocs, irec)),
+                   irec);
+  } else {
+    gen->add_instr(IGen::cmp_gpr64_gpr64(*gen, get_reg(condition.a, allocs, irec),
+                                         get_reg(condition.b, allocs, irec)),
+                   irec);
+  }
+
+  auto jump_rec = gen->add_instr(jump_instr, irec);
+  gen->link_instruction_jump(jump_rec, gen->get_future_ir_record_in_same_func(irec, label.idx));
 }
 
 /////////////////////
@@ -1768,7 +1827,8 @@ void IR_JumpReg::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_JumpReg::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                   const AllocationResult& allocs,
                                   emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_JumpReg::do_codegen_arm64");
+  auto src_reg = m_use_coloring ? get_reg(m_src, allocs, irec) : get_no_color_reg(m_src);
+  gen->add_instr(IGen::jmp_r64(*gen, src_reg), irec);
 }
 
 ///////////////////////

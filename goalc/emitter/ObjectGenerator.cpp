@@ -407,16 +407,22 @@ void ObjectGenerator::handle_temp_jump_links(int seg) {
     ASSERT(link.dest.seg == seg);
 
     if (m_instruction_set == InstructionSet::ARM64) {
-      // ARM64 within-function jumps are B/BL with a 26-bit signed word offset,
+      // ARM64 within-function jumps are B/BL (26-bit) or B.cond (19-bit),
       // patched directly in the instruction word (no x86 imm/disp offsets).
       const auto& jump_instr = function.instructions.at(link.jump_instr.instr_id);
       int patch_location = function.instruction_to_byte_in_data.at(link.jump_instr.instr_id);
       int source_pc = patch_location;
       int dest_pc =
           function.instruction_to_byte_in_data.at(function.ir_to_instruction.at(link.dest.ir_id));
+      // A B.cond word has bits [31:25] == 0b0101010; distinguish it from B/BL.
+      u32 word;
+      memcpy(&word, m_data_by_seg.at(seg).data() + patch_location, 4);
+      auto reloc = ((word & 0x7C000000u) == 0x54000000u)
+                       ? RelocationType::Arm64CondBranch19
+                       : RelocationType::Arm64Branch26;
       std::string err;
-      if (!apply_relocation(RelocationType::Arm64Branch26, m_data_by_seg.at(seg).data(),
-                            patch_location, source_pc, dest_pc, 0, &err)) {
+      if (!apply_relocation(reloc, m_data_by_seg.at(seg).data(), patch_location, source_pc, dest_pc,
+                            0, &err)) {
         throw std::runtime_error(fmt::format("ARM64 jump link in {} at offset {} failed: {}",
                                              function.debug ? function.debug->name : "?",
                                              patch_location, err));
