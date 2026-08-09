@@ -114,6 +114,11 @@ ObjectFileData ObjectGenerator::generate_data_v3(const TypeSystem* ts) {
   // step 4.5, collect final result of code/object generation for compiler debugging disassembly
   for (int seg = 0; seg < N_SEG; seg++) {
     for (auto& function : m_function_data_by_seg.at(seg)) {
+      if (function.instruction_to_byte_in_data.empty()) {
+        // a function with no instructions is malformed; skip the debug copy
+        // instead of throwing an out-of-range access.
+        continue;
+      }
       auto start = m_data_by_seg.at(seg).begin() + function.instruction_to_byte_in_data.at(0);
       auto end = start + function.debug->length;
       function.debug->generated_code = {start, end};

@@ -201,7 +201,15 @@ void IR_Return::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_Return::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                  const AllocationResult& allocs,
                                  emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_Return::do_codegen_arm64");
+  // Same register move semantics as x86; the move instructions dispatch to
+  // the ARM64 encoder.
+  auto val_reg = get_reg(m_value, allocs, irec);
+  auto dest_reg = get_reg(m_return_reg, allocs, irec);
+  if (val_reg == dest_reg) {
+    gen->add_instr(IGen::null(*gen), irec);
+  } else {
+    regset_common(gen, allocs, irec, m_return_reg, m_value, true);
+  }
 }
 
 /////////////////////
@@ -230,7 +238,8 @@ void IR_LoadConstant64::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_LoadConstant64::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                          const AllocationResult& allocs,
                                          emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_LoadConstant64::do_codegen_arm64");
+  auto dest_reg = get_reg(m_dest, allocs, irec);
+  load_constant(m_value, gen, irec, dest_reg);
 }
 
 /////////////////////
@@ -382,7 +391,7 @@ void IR_RegSet::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_RegSet::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                  const AllocationResult& allocs,
                                  emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_RegSet::do_codegen_arm64");
+  regset_common(gen, allocs, irec, m_dest, m_src, true);
 }
 
 std::string IR_RegSet::print() {
@@ -1174,7 +1183,10 @@ void IR_Null::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_Null::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                const AllocationResult& allocs,
                                emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_Null::do_codegen_arm64");
+  // Like x86: emits nothing.
+  (void)gen;
+  (void)allocs;
+  (void)irec;
 }
 
 ///////////////////////
@@ -1205,7 +1217,10 @@ void IR_ValueReset::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_ValueReset::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                      const AllocationResult& allocs,
                                      emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_ValueReset::do_codegen_arm64");
+  // Like x86: emits nothing (it is a compiler-internal hint).
+  (void)gen;
+  (void)allocs;
+  (void)irec;
 }
 
 ///////////////////////
@@ -1333,7 +1348,8 @@ void IR_Nop::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_Nop::do_codegen_arm64(emitter::ObjectGenerator* gen,
                               const AllocationResult& allocs,
                               emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_Nop::do_codegen_arm64");
+  (void)allocs;
+  gen->add_instr(IGen::nop(*gen), irec);
 }
 
 ///////////////////////

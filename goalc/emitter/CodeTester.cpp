@@ -63,6 +63,15 @@ void CodeTester::emit(const emitter::Instruction& instr) {
   ASSERT(code_buffer_size <= code_buffer_capacity);
 }
 /*!
+ * Append raw bytes to the code buffer.
+ */
+void CodeTester::append_bytes(const u8* data, int size) {
+  ASSERT(size + code_buffer_size <= code_buffer_capacity);
+  memcpy(code_buffer + code_buffer_size, data, size);
+  code_buffer_size += size;
+}
+
+/*!
  * Add a return instruction to the buffer.
  */
 void CodeTester::emit_return() {

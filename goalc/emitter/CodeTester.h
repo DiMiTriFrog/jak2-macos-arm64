@@ -46,6 +46,12 @@ class CodeTester {
   void emit_pop_all_simd();
   void emit_return();
   void emit(const Instruction& instr);
+
+  /*!
+   * Append raw bytes to the code buffer (used by tests that drive the
+   * ObjectGenerator directly and execute its emitted instruction stream).
+   */
+  void append_bytes(const u8* data, int size);
   u64 execute();
   u64 execute(u64 in0, u64 in1, u64 in2, u64 in3);
 
