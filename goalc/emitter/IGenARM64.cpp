@@ -1003,6 +1003,76 @@ InstructionARM64 load64_gpr64_plus_s32(Register dst_reg, int32_t offset, Registe
   return InstructionARM64(instrs);
 }
 
+InstructionARM64 load32s_gpr64_plus_s32(Register dst_reg, int32_t offset, Register src_reg) {
+  ASSERT(dst_reg.is_gpr(instr_set));
+  ASSERT(src_reg.is_gpr(instr_set));
+  ASSERT(src_reg != SP);
+  ASSERT(offset >= INT32_MIN && offset <= INT32_MAX);
+  std::vector<InstructionARM64> instrs = {
+      // ADD <Xd|SP>, <Xn|SP>, #<imm>{, <shift>}
+      InstructionARM64(Base(0b100100010, 9), Sh(0), Imm12(0), Rd(X16), Rn(src_reg.id())),
+  };
+  if (offset < 0) {
+    offset = std::abs(offset);
+    const auto sub_instrs = construct_multiple_imm12_subs(offset, X16);
+    instrs.insert(instrs.end(), sub_instrs.begin(), sub_instrs.end());
+  } else {
+    const auto add_instrs = construct_multiple_imm12_adds(offset, X16);
+    instrs.insert(instrs.end(), add_instrs.begin(), add_instrs.end());
+  }
+  // https://www.scs.stanford.edu/~zyedidia/arm64/ldrsw_imm.html
+  // LDRSW <Xt>, [<Xn|SP>{, #<pimm>}]
+  instrs.emplace_back(
+      InstructionARM64(Base(0b1011100110, 10), Imm12(0), Rt(dst_reg.id()), Rn(X16)));
+  return InstructionARM64(instrs);
+}
+
+InstructionARM64 load32u_gpr64_plus_s32(Register dst_reg, int32_t offset, Register src_reg) {
+  ASSERT(dst_reg.is_gpr(instr_set));
+  ASSERT(src_reg.is_gpr(instr_set));
+  ASSERT(src_reg != SP);
+  ASSERT(offset >= INT32_MIN && offset <= INT32_MAX);
+  std::vector<InstructionARM64> instrs = {
+      // ADD <Xd|SP>, <Xn|SP>, #<imm>{, <shift>}
+      InstructionARM64(Base(0b100100010, 9), Sh(0), Imm12(0), Rd(X16), Rn(src_reg.id())),
+  };
+  if (offset < 0) {
+    offset = std::abs(offset);
+    const auto sub_instrs = construct_multiple_imm12_subs(offset, X16);
+    instrs.insert(instrs.end(), sub_instrs.begin(), sub_instrs.end());
+  } else {
+    const auto add_instrs = construct_multiple_imm12_adds(offset, X16);
+    instrs.insert(instrs.end(), add_instrs.begin(), add_instrs.end());
+  }
+  // LDR <Wt>, [<Xn|SP>{, #<pimm>}]
+  instrs.emplace_back(
+      InstructionARM64(Base(0b1011100101, 10), Imm12(0), Rt(dst_reg.id()), Rn(X16)));
+  return InstructionARM64(instrs);
+}
+
+InstructionARM64 store32_gpr64_plus_s32(Register addr, int32_t offset, Register value) {
+  ASSERT(value.is_gpr(instr_set));
+  ASSERT(addr.is_gpr(instr_set));
+  ASSERT(addr != SP);
+  ASSERT(offset >= INT32_MIN && offset <= INT32_MAX);
+  std::vector<InstructionARM64> instrs = {
+      // ADD <Xd|SP>, <Xn|SP>, #<imm>{, <shift>}
+      InstructionARM64(Base(0b100100010, 9), Sh(0), Imm12(0), Rd(X16), Rn(addr.id())),
+  };
+  if (offset < 0) {
+    offset = std::abs(offset);
+    const auto sub_instrs = construct_multiple_imm12_subs(offset, X16);
+    instrs.insert(instrs.end(), sub_instrs.begin(), sub_instrs.end());
+  } else {
+    const auto add_instrs = construct_multiple_imm12_adds(offset, X16);
+    instrs.insert(instrs.end(), add_instrs.begin(), add_instrs.end());
+  }
+  // STR <Wt>, [<Xn|SP>{, #<pimm>}]
+  instrs.emplace_back(
+      InstructionARM64(Base(0b1011100100, 10), Imm12(0), Rt(value.id()), Rn(X16)));
+  return InstructionARM64(instrs);
+}
+
 InstructionARM64 store64_gpr64_plus_s32(Register addr, int32_t offset, Register value) {
   ASSERT(value.is_gpr(instr_set));
   ASSERT(addr.is_gpr(instr_set));

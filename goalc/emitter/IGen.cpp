@@ -590,6 +590,27 @@ Instruction load64_gpr64_plus_s32(const ObjectGenerator& gen,
   IGEN_DISPATCH(load64_gpr64_plus_s32, dst_reg, offset, src_reg);
 }
 
+Instruction load32s_gpr64_plus_s32(const ObjectGenerator& gen,
+                                   Register dst_reg,
+                                   int32_t offset,
+                                   Register src_reg) {
+  IGEN_DISPATCH(load32s_gpr64_plus_s32, dst_reg, offset, src_reg);
+}
+
+Instruction load32u_gpr64_plus_s32(const ObjectGenerator& gen,
+                                   Register dst_reg,
+                                   int32_t offset,
+                                   Register src_reg) {
+  IGEN_DISPATCH(load32u_gpr64_plus_s32, dst_reg, offset, src_reg);
+}
+
+Instruction store32_gpr64_plus_s32(const ObjectGenerator& gen,
+                                   Register addr,
+                                   int32_t offset,
+                                   Register value) {
+  IGEN_DISPATCH(store32_gpr64_plus_s32, addr, offset, value);
+}
+
 Instruction store64_gpr64_plus_s32(const ObjectGenerator& gen,
                                    Register addr,
                                    int32_t offset,

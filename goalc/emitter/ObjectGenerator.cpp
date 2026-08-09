@@ -481,7 +481,7 @@ void ObjectGenerator::handle_temp_rip_func_links(int seg) {
   // The RIP-relative / instruction-embedded link kinds are x86-specific and the
   // ARM64 equivalents need an approved persistent format (ADR-0008).  Fail
   // loudly instead of silently writing x86-shaped links for ARM64 objects.
-  if (m_instruction_set == InstructionSet::ARM64 && !m_rip_data_temp_links_by_seg.at(seg).empty()) {
+  if (m_instruction_set == InstructionSet::ARM64 && !m_rip_func_temp_links_by_seg.at(seg).empty()) {
     throw std::runtime_error("ARM64 object requested an x86 RIP/symbol-instruction link");
   }
   for (const auto& link : m_rip_func_temp_links_by_seg.at(seg)) {
@@ -495,11 +495,24 @@ void ObjectGenerator::handle_temp_rip_func_links(int seg) {
 }
 
 void ObjectGenerator::handle_temp_rip_data_links(int seg) {
-  // The RIP-relative / instruction-embedded link kinds are x86-specific and the
-  // ARM64 equivalents need an approved persistent format (ADR-0008).  Fail
-  // loudly instead of silently writing x86-shaped links for ARM64 objects.
-  if (m_instruction_set == InstructionSet::ARM64 && !m_rip_func_temp_links_by_seg.at(seg).empty()) {
-    throw std::runtime_error("ARM64 object requested an x86 RIP/symbol-instruction link");
+  if (m_instruction_set == InstructionSet::ARM64) {
+    // ARM64 references to same-object data use an LDR literal whose imm19 is
+    // resolved at generation time (the literal target is a static record in
+    // this segment).  The literal's .quad is patched at load time through the
+    // arch-neutral pointer/symbol link machinery, so no persistent RIP link is
+    // emitted here.
+    for (const auto& link : m_rip_data_temp_links_by_seg.at(seg)) {
+      const auto& function = m_function_data_by_seg.at(seg).at(link.instr.func_id);
+      int instr_offset = function.instruction_to_byte_in_data.at(link.instr.instr_id);
+      const auto& target = m_static_data_by_seg.at(link.data.seg).at(link.data.static_id);
+      int target_offset = target.location + link.offset;
+      std::string err;
+      if (!apply_relocation(RelocationType::Arm64LdrLiteral19, m_data_by_seg.at(seg).data(),
+                            instr_offset, instr_offset, target_offset, 0, &err)) {
+        throw std::runtime_error(fmt::format("ARM64 literal load link failed: {}", err));
+      }
+    }
+    return;
   }
   for (const auto& link : m_rip_data_temp_links_by_seg.at(seg)) {
     RipLink result;

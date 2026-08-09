@@ -1344,6 +1344,21 @@ InstructionX86 load64_gpr64_plus_s32(Register dst_reg, int32_t offset, Register 
   return instr;
 }
 
+InstructionX86 load32s_gpr64_plus_s32(Register dst_reg, int32_t offset, Register src_reg) {
+  ASSERT_MSG(false, "x86 load32s_gpr64_plus_s32 is not used by the x86 backend");
+  return InstructionX86(0);
+}
+
+InstructionX86 load32u_gpr64_plus_s32(Register dst_reg, int32_t offset, Register src_reg) {
+  ASSERT_MSG(false, "x86 load32u_gpr64_plus_s32 is not used by the x86 backend");
+  return InstructionX86(0);
+}
+
+InstructionX86 store32_gpr64_plus_s32(Register addr, int32_t offset, Register value) {
+  ASSERT_MSG(false, "x86 store32_gpr64_plus_s32 is not used by the x86 backend");
+  return InstructionX86(0);
+}
+
 InstructionX86 store64_gpr64_plus_s32(Register addr, int32_t offset, Register value) {
   ASSERT(addr.is_gpr(instr_set));
   ASSERT(value.is_gpr(instr_set));

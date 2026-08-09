@@ -6,6 +6,7 @@
 
 #include "goalc/compiler/Env.h"
 #include "goalc/emitter/IGen.h"
+#include "goalc/emitter/IGenARM64.h"
 
 #include "fmt/format.h"
 
@@ -153,6 +154,25 @@ void regset_common(emitter::ObjectGenerator* gen,
 }
 }  // namespace
 
+namespace {
+/*!
+ * ARM64 helper: emit `ldr xDst, [pc, #4]` (imm19 placeholder, resolved by
+ * handle_temp_rip_data_links at generation time) followed by a 64-bit literal
+ * word in a static record.  The literal is patched at load time through the
+ * arch-neutral pointer/symbol link machinery; the returned StaticRecord is the
+ * literal's location.
+ */
+emitter::StaticRecord emit_arm64_literal(emitter::ObjectGenerator* gen,
+                                         emitter::IR_Record irec,
+                                         emitter::Register dst) {
+  auto instr = gen->add_instr(Instruction(IGen::ARM64::load64_pcRel_s32(dst, 4)), irec);
+  emitter::StaticRecord lit = gen->add_static_to_seg(irec.seg);
+  gen->get_static_data(lit).assign(8, 0);
+  gen->link_instruction_static(instr, lit, 0);
+  return lit;
+}
+}  // namespace
+
 ///////////
 // Return
 ///////////
@@ -287,7 +307,42 @@ void IR_LoadSymbolPointer::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_LoadSymbolPointer::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                             const AllocationResult& allocs,
                                             emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_LoadSymbolPointer::do_codegen_arm64");
+  auto dest_reg = get_reg(m_dest, allocs, irec);
+  // Note: is_128bit_simd(ARM64) cannot be used to distinguish GPRs from SIMD
+  // registers (their ids overlap), so the register class drives the move.
+  bool dest_is_simd = m_dest->ireg().reg_class == RegClass::VECTOR_FLOAT ||
+                      m_dest->ireg().reg_class == RegClass::INT_128 ||
+                      m_dest->ireg().reg_class == RegClass::FLOAT;
+  if (m_name == "#f") {
+    static_assert(false_symbol_offset() == 0, "false symbol location");
+    if (dest_is_simd) {
+      gen->add_instr(IGen::movq_f64_gpr64(*gen, dest_reg,
+                                          emitter::get_register_info(gen->instr_set()).get_st_reg()),
+                     irec);
+    } else {
+      gen->add_instr(IGen::mov_gpr64_gpr64(*gen, dest_reg,
+                                           emitter::get_register_info(gen->instr_set()).get_st_reg()),
+                     irec);
+    }
+  } else if (m_name == "#t") {
+    gen->add_instr(IGen::lea_reg_plus_off8(*gen, dest_reg,
+                                           emitter::get_register_info(gen->instr_set()).get_st_reg(),
+                                           true_symbol_offset(gen->version())),
+                   irec);
+  } else if (m_name == "_empty_") {
+    gen->add_instr(IGen::lea_reg_plus_off8(*gen, dest_reg,
+                                           emitter::get_register_info(gen->instr_set()).get_st_reg(),
+                                           empty_pair_offset_from_s7(gen->version())),
+                   irec);
+  } else {
+    // Load the symbol offset from a literal and add st: xDst = st + offset.
+    auto lit = emit_arm64_literal(gen, irec, X16);
+    gen->link_static_symbol_ptr(lit, 0, m_name);
+    gen->add_instr(IGen::mov_gpr64_gpr64(*gen, dest_reg,
+                                         emitter::get_register_info(gen->instr_set()).get_st_reg()),
+                   irec);
+    gen->add_instr(IGen::add_gpr64_gpr64(*gen, dest_reg, X16), irec);
+  }
 }
 
 /////////////////////
@@ -321,7 +376,14 @@ void IR_SetSymbolValue::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_SetSymbolValue::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                          const AllocationResult& allocs,
                                          emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_SetSymbolValue::do_codegen_arm64");
+  auto src_reg = get_reg(m_src, allocs, irec);
+  // x16 = st + symbol offset (offset loaded from a literal, patched at load).
+  auto lit = emit_arm64_literal(gen, irec, X16);
+  gen->link_static_symbol_ptr(lit, 0, m_dest->name());
+  gen->add_instr(IGen::add_gpr64_gpr64(*gen, X16,
+                                       emitter::get_register_info(gen->instr_set()).get_st_reg()),
+                 irec);
+  gen->add_instr(IGen::store32_gpr64_plus_s32(*gen, X16, 0, src_reg), irec);
 }
 
 /////////////////////
@@ -363,7 +425,17 @@ void IR_GetSymbolValue::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_GetSymbolValue::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                          const AllocationResult& allocs,
                                          emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_GetSymbolValue::do_codegen_arm64");
+  auto dst_reg = get_reg(m_dest, allocs, irec);
+  auto lit = emit_arm64_literal(gen, irec, X16);
+  gen->link_static_symbol_ptr(lit, 0, m_src->name());
+  gen->add_instr(IGen::add_gpr64_gpr64(*gen, X16,
+                                       emitter::get_register_info(gen->instr_set()).get_st_reg()),
+                 irec);
+  if (m_sext) {
+    gen->add_instr(IGen::load32s_gpr64_plus_s32(*gen, dst_reg, 0, X16), irec);
+  } else {
+    gen->add_instr(IGen::load32u_gpr64_plus_s32(*gen, dst_reg, 0, X16), irec);
+  }
 }
 
 /////////////////////
@@ -595,7 +667,12 @@ void IR_StaticVarAddr::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_StaticVarAddr::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                         const AllocationResult& allocs,
                                         emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_StaticVarAddr::do_codegen_arm64");
+  auto dr = get_reg(m_dest, allocs, irec);
+  auto lit = emit_arm64_literal(gen, irec, dr);
+  gen->link_static_pointer_to_data(lit, 0, m_src->rec, m_src->get_addr_offset());
+  gen->add_instr(IGen::sub_gpr64_gpr64(*gen, dr,
+                                       emitter::get_register_info(gen->instr_set()).get_offset_reg()),
+                 irec);
 }
 
 /////////////////////
@@ -626,7 +703,12 @@ void IR_FunctionAddr::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_FunctionAddr::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                        const AllocationResult& allocs,
                                        emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_FunctionAddr::do_codegen_arm64");
+  auto dr = get_reg(m_dest, allocs, irec);
+  auto lit = emit_arm64_literal(gen, irec, dr);
+  gen->link_static_pointer_to_function(lit, 0, gen->get_existing_function_record(m_src->idx_in_file));
+  gen->add_instr(IGen::sub_gpr64_gpr64(*gen, dr,
+                                       emitter::get_register_info(gen->instr_set()).get_offset_reg()),
+                 irec);
 }
 
 /////////////////////
@@ -939,7 +1021,23 @@ void IR_StaticVarLoad::do_codegen_x86(emitter::ObjectGenerator* gen,
 void IR_StaticVarLoad::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                         const AllocationResult& allocs,
                                         emitter::IR_Record irec) {
-  throw std::runtime_error("NYI - IR_StaticVarLoad::do_codegen_arm64");
+  auto load_info = m_src->get_load_info();
+  ASSERT(m_src->get_addr_offset() == 0);
+  if (m_dest->ireg().reg_class == RegClass::FLOAT) {
+    ASSERT(load_info.load_signed == false);
+    ASSERT(load_info.load_size == 4);
+    ASSERT(load_info.requires_load == true);
+    auto lit = emit_arm64_literal(gen, irec, X16);
+    gen->link_static_pointer_to_data(lit, 0, m_src->rec, 0);
+    gen->add_instr(IGen::load32_xmm32_gpr64_plus_s32(*gen, get_reg(m_dest, allocs, irec), X16, 0),
+                   irec);
+  } else if (m_dest->ireg().reg_class == RegClass::VECTOR_FLOAT) {
+    auto lit = emit_arm64_literal(gen, irec, X16);
+    gen->link_static_pointer_to_data(lit, 0, m_src->rec, 0);
+    gen->add_instr(IGen::load128_simd128_gpr64(*gen, get_reg(m_dest, allocs, irec), X16), irec);
+  } else {
+    ASSERT(false);
+  }
 }
 
 /////////////////////

@@ -359,6 +359,9 @@ InstructionARM64 static_store_f32(Register xmm_value, s64 offset);
 
 // TODO, consider specialized stack loads and stores?
 InstructionARM64 load64_gpr64_plus_s32(Register dst_reg, int32_t offset, Register src_reg);
+InstructionARM64 load32s_gpr64_plus_s32(Register dst_reg, int32_t offset, Register src_reg);
+InstructionARM64 load32u_gpr64_plus_s32(Register dst_reg, int32_t offset, Register src_reg);
+InstructionARM64 store32_gpr64_plus_s32(Register addr, int32_t offset, Register value);
 
 /*!
  * Store 64-bits from gpr into memory located at 64-bit reg + 32-bit signed offset.

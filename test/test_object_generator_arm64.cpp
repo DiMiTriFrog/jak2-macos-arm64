@@ -104,19 +104,24 @@ TEST(ObjectGeneratorARM64, OutOfRangeJumpRejected) {
   EXPECT_THROW(gen.generate_data_v3(&ts), std::runtime_error);
 }
 
-TEST(ObjectGeneratorARM64, X86RipLinkRejected) {
+TEST(ObjectGeneratorARM64, X86RipFuncLinkRejected) {
+  // RIP-to-function links are x86-specific: the ARM64 equivalent uses a
+  // literal + function pointer link, so an ARM64 object that requests an x86
+  // rip-func link must be rejected loudly.
   ObjectGenerator gen(GameVersion::Jak2, InstructionSet::ARM64);
   TypeSystem ts;
   ts.add_builtin_types(GameVersion::Jak2);
-  FunctionDebugInfo dbg;
-  dbg.name = "rip-func";
-  FunctionRecord func = gen.add_function_to_seg(0, &dbg);
+  FunctionDebugInfo dbg1, dbg2;
+  dbg1.name = "rip-func";
+  FunctionRecord func = gen.add_function_to_seg(0, &dbg1);
   IR_Record ir0 = gen.add_ir(func);
   gen.add_instr(Instruction(jmp_imm()), ir0);
-  StaticRecord stat = gen.add_static_to_seg(0);
-  // static_addr produces the ADRP+ADD form on ARM64; the rip-style link that
-  // used to be emitted for x86 must be rejected for ARM64 objects.
+  FunctionDebugInfo dbg2b;
+  dbg2b.name = "target";
+  FunctionRecord target = gen.add_function_to_seg(0, &dbg2b);
+  IR_Record ir1 = gen.add_ir(target);
+  gen.add_instr(Instruction(nop()), ir1);
   InstructionRecord rec{0, func.func_id, ir0.ir_id, 0};
-  gen.link_instruction_static(rec, stat, 0);
+  gen.link_instruction_to_function(rec, target);
   EXPECT_THROW(gen.generate_data_v3(&ts), std::runtime_error);
 }

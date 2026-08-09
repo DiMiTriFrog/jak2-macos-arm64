@@ -497,6 +497,18 @@ Instruction load64_gpr64_plus_s32(const ObjectGenerator& gen,
                                   Register dst_reg,
                                   int32_t offset,
                                   Register src_reg);
+Instruction load32s_gpr64_plus_s32(const ObjectGenerator& gen,
+                                   Register dst_reg,
+                                   int32_t offset,
+                                   Register src_reg);
+Instruction load32u_gpr64_plus_s32(const ObjectGenerator& gen,
+                                   Register dst_reg,
+                                   int32_t offset,
+                                   Register src_reg);
+Instruction store32_gpr64_plus_s32(const ObjectGenerator& gen,
+                                   Register addr,
+                                   int32_t offset,
+                                   Register value);
 
 /*!
  * Store 64-bits from gpr into memory located at 64-bit reg + 32-bit signed offset.
