@@ -189,6 +189,12 @@ u64 CodeTester::execute() {
  * arguments will appear in (will handle windows/linux differences)
  */
 u64 CodeTester::execute(u64 in0, u64 in1, u64 in2, u64 in3) {
+#if defined(__aarch64__)
+  // ARM requires flushing after writing new instructions (and after the
+  // executable page is reused by a later allocation, the icache may hold
+  // stale lines from a previous buffer at the same address).
+  __builtin___clear_cache((char*)code_buffer, (char*)code_buffer + code_buffer_size);
+#endif
   // clang-format off
 #if defined(__APPLE__) && defined(__aarch64__)
   mprotect(code_buffer, code_buffer_capacity, PROT_EXEC | PROT_READ);

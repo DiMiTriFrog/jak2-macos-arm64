@@ -122,13 +122,14 @@ InstructionARM64 mov_gpr64_u64(Register dst, uint64_t val) {
 }
 
 InstructionARM64 mov_gpr64_u32(Register dst, uint64_t val) {
-  return mov_gpr64_u64(dst, val);
+  // x86 mov r64, imm32 zero-extends the 32-bit immediate into the full
+  // register.  Replicate that by masking to the low 32 bits.
+  return mov_gpr64_u64(dst, (u64)(u32)val);
 }
 
 InstructionARM64 mov_gpr64_s32(Register dst, int64_t val) {
-  // preserve sign -- but we are are simply moving the bits
-  u64 raw_val = static_cast<u64>(val);  // via int64_t → sign already there
-  return mov_gpr64_u64(dst, raw_val);
+  // x86 movsxd-style sign extension of a 32-bit value into the full register.
+  return mov_gpr64_u64(dst, (u64)(s64)(s32)(u32)val);
 }
 
 InstructionARM64 movd_gpr32_f32(Register dst, Register src) {
@@ -184,7 +185,7 @@ InstructionARM64 load8s_gpr64_gpr64_plus_gpr64(Register dst, Register addr1, Reg
   ASSERT(addr1 != addr2);
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
-  return InstructionARM64(Base(0b0011100010100000111010, 22), Rt(dst.id()), Rn(addr1.id()),
+  return InstructionARM64(Base(0b0011100010100000011010, 22), Rt(dst.id()), Rn(addr1.id()),
                           Rm(addr2.id()));
 }
 
@@ -198,7 +199,7 @@ InstructionARM64 store8_gpr64_gpr64_plus_gpr64(Register addr1, Register addr2, R
   ASSERT(addr1 != addr2);
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
-  return InstructionARM64(Base(0b0011100000100000111010, 22), Rt(value.id()), Rn(addr1.id()),
+  return InstructionARM64(Base(0b0011100000100000011010, 22), Rt(value.id()), Rn(addr1.id()),
                           Rm(addr2.id()));
 }
 
@@ -392,7 +393,7 @@ InstructionARM64 load8u_gpr64_gpr64_plus_gpr64_plus_s32(Register dst,
   // https://www.scs.stanford.edu/~zyedidia/arm64/ldrb_imm.html
   // LDRB <Xt>, [<Xn|SP>], #<simm>
   instrs.emplace_back(
-      InstructionARM64(Base(0b0011100101, 10), Imm12(offset), Rt(dst.id()), Rn(X16)));
+      InstructionARM64(Base(0b0011100101, 10), Imm12(0), Rt(dst.id()), Rn(X16)));
   return InstructionARM64(instrs);
 }
 
@@ -405,7 +406,7 @@ InstructionARM64 load16s_gpr64_gpr64_plus_gpr64(Register dst, Register addr1, Re
   ASSERT(addr1 != addr2);
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
-  return InstructionARM64(Base(0b0111100010100000111010, 22), Rt(dst.id()), Rn(addr1.id()),
+  return InstructionARM64(Base(0b0111100010100000011010, 22), Rt(dst.id()), Rn(addr1.id()),
                           Rm(addr2.id()));
 }
 
@@ -418,7 +419,7 @@ InstructionARM64 store16_gpr64_gpr64_plus_gpr64(Register addr1, Register addr2, 
   ASSERT(addr1 != addr2);
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
-  return InstructionARM64(Base(0b0111100000100000000010, 22), Rt(value.id()), Rn(addr1.id()),
+  return InstructionARM64(Base(0b0111100000100000011010, 22), Rt(value.id()), Rn(addr1.id()),
                           Rm(addr2.id()));
 }
 
@@ -540,7 +541,7 @@ InstructionARM64 load16u_gpr64_gpr64_plus_gpr64(Register dst, Register addr1, Re
   ASSERT(addr1 != addr2);
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
-  return InstructionARM64(Base(0b0111100001100000111010, 22), Rt(dst.id()), Rn(addr1.id()),
+  return InstructionARM64(Base(0b0111100001100000011010, 22), Rt(dst.id()), Rn(addr1.id()),
                           Rm(addr2.id()));
 }
 
@@ -561,10 +562,9 @@ InstructionARM64 load16u_gpr64_gpr64_plus_gpr64_plus_s8(Register dst,
               // ADD <Xd|SP>, <Xn|SP>, <R><m>{, <extend> {#<amount>}}
               InstructionARM64(Base(0b1000101100100000111000, 22), Rd(X16), Rn(addr1.id()),
                                Rm(addr2.id())),
-              // https://www.scs.stanford.edu/~zyedidia/arm64/ldrh_imm.html
-              // Unsigned offset mode
-              // LDRH <Wt>, [<Xn|SP>{, #<pimm>}]
-              InstructionARM64(Base(0b0111100101, 10), Imm12(offset), Rt(dst.id()), Rn(X16))};
+              // LDURH is unscaled, unlike LDRH whose pimm is scaled by 2.
+              InstructionARM64(Base(0b0111100001000000000000, 22), Imm9s(offset), Rt(dst.id()),
+                               Rn(X16))};
   } else {
     instrs = {
         // https://www.scs.stanford.edu/~zyedidia/arm64/add_addsub_ext.html
@@ -608,7 +608,7 @@ InstructionARM64 load16u_gpr64_gpr64_plus_gpr64_plus_s32(Register dst,
   // https://www.scs.stanford.edu/~zyedidia/arm64/ldrh_imm.html
   // LDRH <Wt>, [<Xn|SP>{, #<pimm>}]
   instrs.emplace_back(
-      InstructionARM64(Base(0b0111100101, 10), Imm12(offset), Rt(dst.id()), Rn(X16)));
+      InstructionARM64(Base(0b0111100101, 10), Imm12(0), Rt(dst.id()), Rn(X16)));
   return InstructionARM64(instrs);
 }
 
@@ -621,7 +621,7 @@ InstructionARM64 load32s_gpr64_gpr64_plus_gpr64(Register dst, Register addr1, Re
   ASSERT(addr1 != addr2);
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
-  return InstructionARM64(Base(0b1011100010100000111010, 22), Rt(dst.id()), Rn(addr1.id()),
+  return InstructionARM64(Base(0b1011100010100000011010, 22), Rt(dst.id()), Rn(addr1.id()),
                           Rm(addr2.id()));
 }
 
@@ -634,7 +634,7 @@ InstructionARM64 store32_gpr64_gpr64_plus_gpr64(Register addr1, Register addr2, 
   ASSERT(addr1 != addr2);
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
-  return InstructionARM64(Base(0b1011100000100000111010, 22), Rt(value.id()), Rn(addr1.id()),
+  return InstructionARM64(Base(0b1011100000100000011010, 22), Rt(value.id()), Rn(addr1.id()),
                           Rm(addr2.id()));
 }
 
@@ -766,7 +766,7 @@ InstructionARM64 load32u_gpr64_gpr64_plus_gpr64(Register dst, Register addr1, Re
   ASSERT(addr1 != addr2);
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
-  return InstructionARM64(Base(0b1011100001100000000010, 22), Rt(dst.id()), Rn(addr1.id()),
+  return InstructionARM64(Base(0b1011100001100000011010, 22), Rt(dst.id()), Rn(addr1.id()),
                           Rm(addr2.id()));
 }
 
@@ -837,7 +837,7 @@ InstructionARM64 load64_gpr64_gpr64_plus_gpr64(Register dst, Register addr1, Reg
   ASSERT(addr1 != addr2);
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
-  return InstructionARM64(Base(0b1111100001100000000010, 22), Rt(dst.id()), Rn(addr1.id()),
+  return InstructionARM64(Base(0b1111100001100000011010, 22), Rt(dst.id()), Rn(addr1.id()),
                           Rm(addr2.id()));
 }
 
@@ -850,7 +850,7 @@ InstructionARM64 store64_gpr64_gpr64_plus_gpr64(Register addr1, Register addr2, 
   ASSERT(addr1 != addr2);
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
-  return InstructionARM64(Base(0b1111100000100000111010, 22), Rt(value.id()), Rn(addr1.id()),
+  return InstructionARM64(Base(0b1111100000100000011010, 22), Rt(value.id()), Rn(addr1.id()),
                           Rm(addr2.id()));
 }
 
@@ -1263,8 +1263,8 @@ InstructionARM64 store32_xmm32_gpr64_plus_gpr64(Register addr1,
   // https://www.scs.stanford.edu/~zyedidia/arm64/str_reg_fpsimd.html
   // 32-bit variant
   // STR <St>, [<Xn|SP>, (<Wm>|<Xm>){, <extend> {<amount>}}]
-  return InstructionARM64(Base(0b1011110000100000000010, 22), Rt(xmm_value.id()), Rm(addr1.id()),
-                          Rn(addr2.id()));
+  return InstructionARM64(Base(0b1011110000100000011010, 22), Rt(xmm_value.id()), Rn(addr1.id()),
+                          Rm(addr2.id()));
 }
 
 InstructionARM64 load32_xmm32_gpr64_plus_gpr64(Register simd_dest, Register addr1, Register addr2) {
@@ -1274,8 +1274,8 @@ InstructionARM64 load32_xmm32_gpr64_plus_gpr64(Register simd_dest, Register addr
   // https://www.scs.stanford.edu/~zyedidia/arm64/ldr_reg_fpsimd.html
   // 32-bit variant
   // LDR <St>, [<Xn|SP>, (<Wm>|<Xm>){, <extend> {<amount>}}]
-  return InstructionARM64(Base(0b1011110001100000111010, 22), Rt(simd_dest.id()), Rm(addr1.id()),
-                          Rn(addr2.id()));
+  return InstructionARM64(Base(0b1011110001100000011010, 22), Rt(simd_dest.id()), Rn(addr1.id()),
+                          Rm(addr2.id()));
 }
 
 InstructionARM64 store32_xmm32_gpr64_plus_gpr64_plus_s8(Register addr1,
@@ -1305,7 +1305,7 @@ InstructionARM64 store32_xmm32_gpr64_plus_gpr64_plus_s8(Register addr1,
   // 32-bit variant
   // STR <St>, [<Xn|SP>], #<simm>
   instrs.emplace_back(
-      InstructionARM64(Base(0b1011110100000000000001, 22), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
+      InstructionARM64(Base(0b1011110100000000000000, 22), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
   return InstructionARM64(instrs);
 }
 
@@ -1367,7 +1367,7 @@ InstructionARM64 store32_xmm32_gpr64_plus_gpr64_plus_s32(Register addr1,
   // 32-bit variant
   // STR <St>, [<Xn|SP>], #<simm>
   instrs.emplace_back(
-      InstructionARM64(Base(0b1011110100000000000001, 22), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
+      InstructionARM64(Base(0b1011110100000000000000, 22), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
   return InstructionARM64(instrs);
 }
 
@@ -1394,7 +1394,7 @@ InstructionARM64 store32_xmm32_gpr64_plus_s32(Register base, Register xmm_value,
   // 32-bit variant
   // STR <St>, [<Xn|SP>], #<simm>
   instrs.emplace_back(
-      InstructionARM64(Base(0b1011110100000000000001, 22), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
+      InstructionARM64(Base(0b1011110100000000000000, 22), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
   return InstructionARM64(instrs);
 }
 
@@ -1421,7 +1421,7 @@ InstructionARM64 store32_xmm32_gpr64_plus_s8(Register base, Register xmm_value, 
   // 32-bit variant, unsigned
   // STR <St>, [<Xn|SP>], #<simm>
   instrs.emplace_back(
-      InstructionARM64(Base(0b1011110100000000000001, 22), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
+      InstructionARM64(Base(0b1011110100000000000000, 22), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
   return InstructionARM64(instrs);
 }
 
@@ -1597,7 +1597,7 @@ InstructionARM64 store128_gpr64_simd128_s32(Register gpr_addr, Register xmm_valu
   // 128-bit variant, unsigned offset
   // STR <Qt>, [<Xn|SP>{, #<pimm>}]
   instrs.emplace_back(
-      InstructionARM64(Base(0b0011110110, 22), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
+      InstructionARM64(Base(0b0011110110, 10), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
   return InstructionARM64(instrs);
 }
 
@@ -1626,7 +1626,7 @@ InstructionARM64 store128_gpr64_simd128_s8(Register gpr_addr, Register xmm_value
   // 128-bit variant, unsigned offset
   // STR <Qt>, [<Xn|SP>{, #<pimm>}]
   instrs.emplace_back(
-      InstructionARM64(Base(0b0011110110, 22), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
+      InstructionARM64(Base(0b0011110110, 10), Imm12(0), Rt(xmm_value.id()), Rn(X16)));
   return InstructionARM64(instrs);
 }
 
@@ -1858,13 +1858,13 @@ InstructionARM64 static_load(Register dest, s64 offset, int size, bool sign_exte
       break;
     case 4:
       if (sign_extend) {
-        return load8s_pcRel_s32(dest, offset);
+        return load32s_pcRel_s32(dest, offset);
       } else {
-        return load8u_pcRel_s32(dest, offset);
+        return load32u_pcRel_s32(dest, offset);
       }
       break;
     case 8:
-      return load8s_pcRel_s32(dest, offset);
+      return load64_pcRel_s32(dest, offset);
     default:
       ASSERT(false);
   }
@@ -2145,7 +2145,7 @@ InstructionARM64 movsx_r64_r32(Register dst, Register src) {
 InstructionARM64 cmp_gpr64_gpr64(Register a, Register b) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/cmp_subs_addsub_ext.html
   // CMP <Xn|SP>, <R><m>{, <extend> {#<amount>}}
-  return InstructionARM64(Base(0b11101011001000000000000000011111, 32), Rn(a.id()), Rn(b.id()));
+  return InstructionARM64(Base(0b11101011000000000000000000011111, 32), Rn(a.id()), Rm(b.id()));
 }
 
 //;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2161,11 +2161,11 @@ InstructionARM64 or_gpr64_gpr64(Register dst, Register src) {
 }
 
 InstructionARM64 and_gpr64_gpr64(Register dst, Register src) {
-  // https://www.scs.stanford.edu/~zyedidia/arm64/add_addsub_shift.html
-  // ADD <Xd>, <Xn>, <Xm>{, <shift> #<amount>}
+  // https://www.scs.stanford.edu/~zyedidia/arm64/and_log_shift.html
+  // AND <Xd>, <Xn>, <Xm>{, <shift> #<amount>}
   ASSERT(dst.is_gpr(instr_set));
   ASSERT(src.is_gpr(instr_set));
-  return InstructionARM64(Base(0b10001011000, 11), Rd(dst.id()), Rn(dst.id()), Rm(src.id()));
+  return InstructionARM64(Base(0b10001010000, 11), Rd(dst.id()), Rn(dst.id()), Rm(src.id()));
 }
 
 InstructionARM64 xor_gpr64_gpr64(Register dst, Register src) {
@@ -2365,7 +2365,7 @@ InstructionARM64 sqrt_f32(Register dst, Register src) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/fsqrt_float.html
   // Single-precision (ftype == 00)
   // FSQRT <Sd>, <Sn>
-  return InstructionARM64(Base(0b0001111000100001110000, 22), Rn(src.id()), Rm(dst.id()));
+  return InstructionARM64(Base(0b0001111000100001110000, 22), Rn(src.id()), Rd(dst.id()));
 }
 
 InstructionARM64 mul_f32_f32(Register dst, Register src) {
@@ -2420,14 +2420,14 @@ InstructionARM64 int32_to_f32(Register dst, Register src) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/scvtf_float_int.html
   // 32-bit to single-precision (sf == 0 && ftype == 00)
   // SCVTF <Sd>, <Wn>
-  return InstructionARM64(Base(0b0001111000100010000000, 22), Rd(dst.id()), Rn(dst.id()));
+  return InstructionARM64(Base(0b0001111000100010000000, 22), Rd(dst.id()), Rn(src.id()));
 }
 
 InstructionARM64 f32_to_int32(Register dst, Register src) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/fcvtzs_float_int.html
   // 32-bit to single-precision (sf == 0 && ftype == 00)
   // FCVTZS <Wd>, <Sn>
-  return InstructionARM64(Base(0b0001111000111000000000, 22), Rd(dst.id()), Rn(dst.id()));
+  return InstructionARM64(Base(0b0001111000111000000000, 22), Rd(dst.id()), Rn(src.id()));
 }
 
 InstructionARM64 nop() {
@@ -2482,8 +2482,8 @@ InstructionARM64 loadvf_gpr64_plus_gpr64(Register dst, Register addr1, Register 
   ASSERT(addr1 != addr2);
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
-  return InstructionARM64(Base(0b0011110011100000000010, 22), Rt(dst.id()), Rn(addr1.id()),
-                          Rm(addr1.id()));
+  return InstructionARM64(Base(0b0011110011100001011010, 22), Rt(dst.id()), Rn(addr1.id()),
+                          Rm(addr2.id()));
 }
 
 InstructionARM64 loadvf_gpr64_plus_gpr64_plus_s8(Register dst,
@@ -2500,8 +2500,15 @@ InstructionARM64 loadvf_gpr64_plus_gpr64_plus_s8(Register dst,
   ASSERT(addr1 != SP);
   ASSERT(addr2 != SP);
   ASSERT(offset >= INT8_MIN && offset <= INT8_MAX);
-  return InstructionARM64(Base(0b0011110011000000000001, 22), Rt(dst.id()), Rn(addr1.id()),
-                          Imm9s(offset));
+  // compute addr1 + addr2 in x16, then LDUR with the signed offset
+  std::vector<InstructionARM64> instrs = {
+      // https://www.scs.stanford.edu/~zyedidia/arm64/add_addsub_shift.html
+      // ADD <Xd>, <Xn>, <Xm>{, <shift> #<amount>}
+      InstructionARM64(Base(0b10001011000, 11), Rd(X16), Imm6(0), Rn(addr1.id()), Rm(addr2.id())),
+  };
+  instrs.emplace_back(
+      InstructionARM64(Base(0b0011110011000000000000, 22), Rt(dst.id()), Rn(X16), Imm9s(offset)));
+  return InstructionARM64(instrs);
 }
 
 InstructionARM64 loadvf_gpr64_plus_gpr64_plus_s32(Register dst,
@@ -2534,7 +2541,7 @@ InstructionARM64 loadvf_gpr64_plus_gpr64_plus_s32(Register dst,
   // 128-bit variant
   // LDR <Qt>, [<Xn|SP>], #<simm>
   instrs.emplace_back(
-      InstructionARM64(Base(0b0011110011000000000001, 22), Rt(dst.id()), Rn(X16), Imm9s(0)));
+      InstructionARM64(Base(0b0011110011000000000000, 22), Rt(dst.id()), Rn(X16), Imm9s(0)));
   return InstructionARM64(instrs);
 }
 
@@ -2547,7 +2554,7 @@ InstructionARM64 storevf_gpr64_plus_gpr64(Register value, Register addr1, Regist
   ASSERT(addr2 != SP);
   // https://www.scs.stanford.edu/~zyedidia/arm64/str_reg_fpsimd.html
   // STR <Qt>, [<Xn|SP>, (<Wm>|<Xm>){, <extend> {<amount>}}]
-  return InstructionARM64(Base(0b0011110010100000000010, 22), Rt(value.id()), Rn(addr1.id()),
+  return InstructionARM64(Base(0b0011110010100001011010, 22), Rt(value.id()), Rn(addr1.id()),
                           Rm(addr2.id()));
 }
 
@@ -2580,7 +2587,7 @@ InstructionARM64 storevf_gpr64_plus_gpr64_plus_s8(Register value,
   // https://www.scs.stanford.edu/~zyedidia/arm64/str_imm_fpsimd.html
   // STR <Qt>, [<Xn|SP>], #<simm>
   instrs.emplace_back(
-      InstructionARM64(Base(0b0011110010000000000001, 22), Rt(value.id()), Rn(X16), Imm9s(0)));
+      InstructionARM64(Base(0b0011110010000000000000, 22), Rt(value.id()), Rn(X16), Imm9s(0)));
   return InstructionARM64(instrs);
 }
 
@@ -2613,7 +2620,7 @@ InstructionARM64 storevf_gpr64_plus_gpr64_plus_s32(Register value,
   // https://www.scs.stanford.edu/~zyedidia/arm64/str_imm_fpsimd.html
   // STR <Qt>, [<Xn|SP>], #<simm>
   instrs.emplace_back(
-      InstructionARM64(Base(0b0011110010000000000001, 22), Rt(value.id()), Rn(X16), Imm9s(0)));
+      InstructionARM64(Base(0b0011110010000000000000, 22), Rt(value.id()), Rn(X16), Imm9s(0)));
   return InstructionARM64(instrs);
 }
 
@@ -2771,7 +2778,7 @@ InstructionARM64 splat_vf(Register dst, Register src, Register::VF_ELEMENT eleme
 InstructionARM64 xor_vf(Register dst, Register src1, Register src2) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/eor_advsimd.html
   // EOR <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
-  return InstructionARM64(Base(0b0110111000100000000111, 22), Rn(src1.id()), Rm(src2.id()),
+  return InstructionARM64(Base(0b0110111000100001000111, 22), Rn(src1.id()), Rm(src2.id()),
                           Rd(dst.id()));
 }
 
@@ -2779,7 +2786,7 @@ InstructionARM64 sub_vf(Register dst, Register src1, Register src2) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/fsub_advsimd.html
   // FSUB <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
   // 4 single precision floats
-  return InstructionARM64(Base(0b0100111010100000110101, 22), Rn(src1.id()), Rm(src2.id()),
+  return InstructionARM64(Base(0b0100111010100001110101, 22), Rn(src1.id()), Rm(src2.id()),
                           Rd(dst.id()));
 }
 
@@ -2787,7 +2794,7 @@ InstructionARM64 add_vf(Register dst, Register src1, Register src2) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/add_advsimd.html
   // ADD <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
   // 4 single precision floats
-  return InstructionARM64(Base(0b0100111010100000100001, 22), Rn(src1.id()), Rm(src2.id()),
+  return InstructionARM64(Base(0b0100111000100001110101, 22), Rn(src1.id()), Rm(src2.id()),
                           Rd(dst.id()));
 }
 
@@ -2795,7 +2802,7 @@ InstructionARM64 mul_vf(Register dst, Register src1, Register src2) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/fmul_advsimd_vec.html
   // FMUL <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
   // 4 single precision floats
-  return InstructionARM64(Base(0b0110111000100000110111, 22), Rn(src1.id()), Rm(src2.id()),
+  return InstructionARM64(Base(0b0110111000100001110111, 22), Rn(src1.id()), Rm(src2.id()),
                           Rd(dst.id()));
 }
 
@@ -2803,7 +2810,7 @@ InstructionARM64 max_vf(Register dst, Register src1, Register src2) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/famax_advsimd.html
   // FAMAX <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
   // 4 single precision floats
-  return InstructionARM64(Base(0b0100111010100000110111, 22), Rn(src1.id()), Rm(src2.id()),
+  return InstructionARM64(Base(0b0100111000100001111101, 22), Rn(src1.id()), Rm(src2.id()),
                           Rd(dst.id()));
 }
 
@@ -2811,7 +2818,7 @@ InstructionARM64 min_vf(Register dst, Register src1, Register src2) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/famin_advsimd.html
   // FAMIN <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
   // 4 single precision floats
-  return InstructionARM64(Base(0b0110111010100000110111, 22), Rn(src1.id()), Rm(src2.id()),
+  return InstructionARM64(Base(0b0100111010100001111101, 22), Rn(src1.id()), Rm(src2.id()),
                           Rd(dst.id()));
 }
 
@@ -2819,7 +2826,7 @@ InstructionARM64 div_vf(Register dst, Register src1, Register src2) {
   // https://www.scs.stanford.edu/~zyedidia/arm64/fdiv_advsimd.html
   // FDIV <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
   // 4 single precision floats
-  return InstructionARM64(Base(0b0110111000100000111111, 22), Rn(src1.id()), Rm(src2.id()),
+  return InstructionARM64(Base(0b0110111000100001111111, 22), Rn(src1.id()), Rm(src2.id()),
                           Rd(dst.id()));
 }
 
@@ -2853,7 +2860,7 @@ InstructionARM64 pw_sra(Register dst, Register src, u8 imm) {
   // - vector, 4S
   // SSHR <Vd>.<T>, <Vn>.<T>, #<shift>
   return InstructionARM64(Base(0b0100111100100000000001, 22), Rn(src.id()), Rd(dst.id()),
-                          Immb(imm));
+                          Immb(64 - imm));
 }
 
 // - logical_shift_right_32bit_vf
@@ -2862,7 +2869,7 @@ InstructionARM64 pw_srl(Register dst, Register src, u8 imm) {
   // - vector, 4S
   // USHR <Vd>.<T>, <Vn>.<T>, #<shift>
   return InstructionARM64(Base(0b0110111100100000000001, 22), Rn(src.id()), Rd(dst.id()),
-                          Immb(imm));
+                          Immb(64 - imm));
 }
 
 // - logical_shift_left_32bit_vf
@@ -2871,7 +2878,7 @@ InstructionARM64 pw_sll(Register dst, Register src, u8 imm) {
   // - vector, 4S
   // SHL <Vd>.<T>, <Vn>.<T>, #<shift>
   return InstructionARM64(Base(0b0100111100100000010101, 22), Rn(src.id()), Rd(dst.id()),
-                          Immb(imm));
+                          Immb(32 + imm));
 }
 
 // - logical_shift_right_16bit_vf
@@ -2880,7 +2887,7 @@ InstructionARM64 ph_srl(Register dst, Register src, u8 imm) {
   // - vector, 8H
   // USHR <Vd>.<T>, <Vn>.<T>, #<shift>
   return InstructionARM64(Base(0b0110111100010000000001, 22), Rn(src.id()), Rd(dst.id()),
-                          Immb(imm));
+                          Immb(32 - imm));
 }
 
 // - logical_shift_left_16bit_vf
@@ -2889,7 +2896,7 @@ InstructionARM64 ph_sll(Register dst, Register src, u8 imm) {
   // - vector, 8H
   // SHL <Vd>.<T>, <Vn>.<T>, #<shift>
   return InstructionARM64(Base(0b0100111100010000010101, 22), Rn(src.id()), Rd(dst.id()),
-                          Immb(imm));
+                          Immb(16 + imm));
 }
 
 InstructionARM64 parallel_add_byte(Register dst, Register src0, Register src1) {
@@ -2912,7 +2919,7 @@ InstructionARM64 parallel_bitwise_xor(Register dst, Register src0, Register src1
   // https://www.scs.stanford.edu/~zyedidia/arm64/eor_advsimd.html
   // - vector, 16B
   // EOR <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
-  return InstructionARM64(Base(0b0110111000100000000111, 22), Rn(src0.id()), Rm(src1.id()),
+  return InstructionARM64(Base(0b0110111000100001000111, 22), Rn(src0.id()), Rm(src1.id()),
                           Rd(dst.id()));
 }
 

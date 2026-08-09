@@ -93,7 +93,7 @@ constexpr Field Rm(u32 x) {
 }
 
 constexpr Field Imm4(u32 x) {
-  ASSERT(x >= 0 && x <= ((2 ^ 4) - 1));
+  ASSERT(x >= 0 && x <= ((1 << 4) - 1));
   return Field{(x & 0b111111) << 11};
 }
 
@@ -138,27 +138,27 @@ constexpr Field Immhi(u32 x) {
 }
 
 constexpr Field Imms(u32 x) {
-  ASSERT(x >= 0 && x <= ((2 ^ 6) - 1));
+  ASSERT(x >= 0 && x <= ((1 << 6) - 1));
   return Field{(static_cast<uint32_t>(x) & 0b111111) << 10};
 }
 
 constexpr Field Immr(u32 x) {
-  ASSERT(x >= 0 && x <= ((2 ^ 6) - 1));
+  ASSERT(x >= 0 && x <= ((1 << 6) - 1));
   return Field{(static_cast<uint32_t>(x) & 0b111111) << 16};
 }
 
 constexpr Field Immh(u32 x) {
-  ASSERT(x >= 0 && x <= ((2 ^ 4) - 1));
+  ASSERT(x >= 0 && x <= ((1 << 4) - 1));
   return Field{(static_cast<uint32_t>(x) & 0b111111) << 19};
 }
 
 constexpr Field Immb(u32 x) {
-  ASSERT(x >= 0 && x <= ((2 ^ 3) - 1));
+  ASSERT(x >= 0 && x <= ((1 << 6) - 1));
   return Field{(static_cast<uint32_t>(x) & 0b111111) << 16};
 }
 
 constexpr Field Cond(u32 x) {
-  ASSERT(x >= 0 && x <= ((2 ^ 4) - 1));
+  ASSERT(x >= 0 && x <= ((1 << 4) - 1));
   return Field{(static_cast<uint32_t>(x) & 0b1111) << 0};
 }
 }  // namespace ARM64
