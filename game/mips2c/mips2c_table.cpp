@@ -3,6 +3,7 @@
 #include "common/log/log.h"
 #include "common/symbols.h"
 
+#include "game/kernel/common/arm64_trampoline.h"
 #include "game/kernel/common/kmalloc.h"
 #include "game/kernel/common/kscheme.h"
 #include "game/kernel/jak1/kscheme.h"
@@ -15,6 +16,8 @@ extern "C" {
 void _mips2c_call_systemv();
 #elif defined __APPLE__ && defined __x86_64__
 void _mips2c_call_systemv() asm("_mips2c_call_systemv");
+#elif defined __aarch64__
+void _mips2c_call_arm64() asm("_mips2c_call_arm64");
 #endif
 void _mips2c_call_windows();
 }
@@ -691,6 +694,12 @@ void LinkedFunctionTable::reg(const std::string& name, u64 (*exec)(void*), u32 s
 
   it.first->second.goal_trampoline = jump_to_asm;
 
+#if defined(__aarch64__)
+  const auto code_size = arm64_trampoline::emit_mips2c(
+      jump_to_asm.c(), stack_size, reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(exec)),
+      reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(_mips2c_call_arm64)));
+  arm64_trampoline::flush(jump_to_asm.c(), code_size);
+#else
   u8* ptr = jump_to_asm.c();
 
   {
@@ -739,6 +748,7 @@ void LinkedFunctionTable::reg(const std::string& name, u64 (*exec)(void*), u32 s
     ptr++;
     *ptr = 0xe0;
   }
+#endif
 }
 
 u32 LinkedFunctionTable::get(const std::string& name) {
