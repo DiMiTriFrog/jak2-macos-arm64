@@ -4,6 +4,7 @@ add_library(compiler
         emitter/ObjectFileData.cpp
         emitter/ObjectGenerator.cpp
         emitter/Register.cpp
+        emitter/Relocation.cpp
         emitter/IGen.cpp
         emitter/IGenARM64.cpp
         emitter/IGenX86.cpp
