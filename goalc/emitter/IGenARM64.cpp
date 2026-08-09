@@ -2104,27 +2104,36 @@ InstructionARM64 imul_gpr64_gpr64(Register dst, Register src) {
 }
 
 InstructionARM64 idiv_gpr32(Register reg) {
-  // divides on x86 are annoying, its one of many that involve hard-coded register src/destinations,
-  // deal with it last
-  ASSERT_MSG(false, "not yet implemented");
-  return InstructionARM64(0b0);
+  // The x86 idiv divides the implicit EDX:EAX 64-bit dividend by the operand,
+  // storing the 32-bit quotient in EAX and remainder in EDX.  On ARM64 a 32-bit
+  // divide is a single sdiv taking an explicit dividend register, so the
+  // dividend lives in W0 (the ARM64 analog of EAX) and the divisor is the
+  // operand.  The quotient is left in W0, mirroring the x86 EAX-in/EAX-out
+  // contract.  Note the ARM64 sdiv saturates on INT_MIN / -1 (returns INT_MIN)
+  // instead of trapping like x86.
+  // https://www.scs.stanford.edu/~zyedidia/arm64/sdiv_sdiv.html
+  // SDIV <Wd>, <Wn>, <Wm>
+  return InstructionARM64(Base(0b0001101011000000000011, 22), Rd(X0), Rn(X0),
+                          Rm(reg.id()));
 }
 
 InstructionARM64 unsigned_div_gpr32(Register reg) {
-  // divides on x86 are annoying, its one of many that involve hard-coded register src/destinations,
-  // deal with it last
-  ASSERT_MSG(false, "not yet implemented");
-  return InstructionARM64(0b0);
+  // Same contract as idiv_gpr32 but unsigned.  UDIV <Wd>, <Wn>, <Wm>.  A zero
+  // divisor yields 0 instead of trapping like x86.
+  // https://www.scs.stanford.edu/~zyedidia/arm64/udiv_udiv.html
+  return InstructionARM64(Base(0b0001101011000000000010, 22), Rd(X0), Rn(X0),
+                          Rm(reg.id()));
 }
 
 InstructionARM64 cdq() {
-  // https://www.scs.stanford.edu/~zyedidia/arm64/asr_asrv.html
-  // asr x3, x0, #63
-  // (using X3 = edx and X0 = eax)
-  // TODO - hardcoded registers, need to check this...
-  ASSERT_MSG(false, "not yet implemented");
-  return InstructionARM64(Base(0b1001101011000000001010, 22), Rm(63), Rn(ARM64_REG::X0),
-                          Rd(ARM64_REG::X3));
+  // x86 cdq sign-extends EAX into EDX:EAX to form a 64-bit signed dividend for
+  // idiv.  ARM64 has no separate dividend-high register: sdiv takes the 32-bit
+  // dividend directly from W0, so the ARM64 translation of cdq is to sign-extend
+  // W0 into X0.  This preserves the x86 instruction flow and is harmless for
+  // the subsequent sdiv (which only reads the low 32 bits).
+  // https://www.scs.stanford.edu/~zyedidia/arm64/sxtw_sbfm.html
+  // SXTW <Xd>, <Wn>
+  return InstructionARM64(Base(0b1001001101000000011111, 22), Rd(X0), Rn(X0));
 }
 
 InstructionARM64 movsx_r64_r32(Register dst, Register src) {
