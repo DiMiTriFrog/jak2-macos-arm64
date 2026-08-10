@@ -32,6 +32,8 @@
  *   Arm64MovWide16    imm16 = ((target + addend) >> (16 * hw)) & 0xFFFF
  *                     16-bit unsigned; hw (shift selector) read from the
  *                     instruction itself (bits [22:21])
+ *   Arm64Adr21        imm21 = target - pc - addend
+ *                     21-bit signed byte displacement, split immlo/immhi
  */
 
 #include <cstdint>
@@ -52,6 +54,7 @@ enum class RelocationType : u8 {
   Arm64AddLo12 = 6,
   Arm64LdrLiteral19 = 7,
   Arm64MovWide16 = 8,
+  Arm64Adr21 = 9,
 };
 
 /*!

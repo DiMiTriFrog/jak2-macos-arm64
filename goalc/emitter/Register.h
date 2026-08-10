@@ -251,6 +251,24 @@ class RegisterInfo {
   // and X0 share an id.
   const Info& get_simd_info(Register r) const { return m_info_simd.at(r.id()); }
 
+  bool is_saved_gpr(Register r) const {
+    for (const auto& saved : m_saved_gprs) {
+      if (saved == r) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool is_saved_xmm(Register r) const {
+    for (const auto& saved : m_saved_xmms) {
+      if (saved == r) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   Register get_gpr_arg_reg(int id) const { return m_gpr_arg_regs.at(id); }
   Register get_xmm_arg_reg(int id) const { return m_xmm_arg_regs.at(id); }
   Register get_saved_gpr(int id) const { return m_saved_gprs.at(id); }

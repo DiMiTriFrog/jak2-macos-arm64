@@ -17,6 +17,16 @@ std::string write_test_project(const std::string& prefix) {
   return path;
 }
 
+std::string write_test_project_with_out_mapping() {
+  const auto path = file_util::get_file_path({"test", "target_arch_tmp.gp"});
+  std::ofstream out(path, std::ios::trunc);
+  out << "(map-path! \"$OUT\" \"out/targetarch/\")\n";
+  out << "(set-output-prefix \"targetarch/\")\n";
+  out << "(defstep :in \"test/target_arch_input\" :tool 'copy :out '(\"$OUT/probe\"))\n";
+  out.close();
+  return path;
+}
+
 }  // namespace
 
 TEST(InstructionSet, ToString) {
@@ -54,5 +64,21 @@ TEST(TargetArch, Arm64OutputPrefixSeparated) {
   MakeSystem make(std::nullopt, "#f", emitter::InstructionSet::ARM64);
   make.load_project_file(path);
   EXPECT_EQ(make.compiler_output_prefix(), "targetarch-arm64/");
+  fs::remove(path);
+}
+
+TEST(TargetArch, Arm64RemapsProjectOutWithPrefix) {
+  const auto path = write_test_project_with_out_mapping();
+  MakeSystem make(std::nullopt, "#f", emitter::InstructionSet::ARM64);
+  make.load_project_file(path);
+  EXPECT_EQ(make.get_dependencies("out/targetarch-arm64/probe").size(), 1);
+  fs::remove(path);
+}
+
+TEST(TargetArch, X86ProjectOutMappingUnchanged) {
+  const auto path = write_test_project_with_out_mapping();
+  MakeSystem make(std::nullopt, "#f", emitter::InstructionSet::X86);
+  make.load_project_file(path);
+  EXPECT_EQ(make.get_dependencies("out/targetarch/probe").size(), 1);
   fs::remove(path);
 }

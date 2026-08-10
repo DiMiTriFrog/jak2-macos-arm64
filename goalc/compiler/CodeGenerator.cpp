@@ -556,12 +556,24 @@ void CodeGenerator::do_asm_function_arm64(FunctionEnv* env, int f_idx, bool allo
   auto f_rec = m_gen.get_existing_function_record(f_idx);
   const auto& allocs = env->alloc_result();
 
-  if (!allow_saved_regs && !allocs.used_saved_regs.empty()) {
+  // r13/r14/r15 are the GOAL process, symbol-table, and memory-offset
+  // registers.  ARM maps them to x20/x21/x22; asm-funcs are allowed to use
+  // them directly because context-switch routines deliberately own that
+  // state.  Other callee-saved registers still require the explicit
+  // allow-saved-regs declaration.
+  const auto is_goal_context_reg = [](Register reg) {
+    return reg == X20 || reg == X21 || reg == X22;
+  };
+  const bool has_unapproved_saved_reg =
+      std::any_of(allocs.used_saved_regs.begin(), allocs.used_saved_regs.end(),
+                  [&](Register reg) { return !is_goal_context_reg(reg); });
+  if (!allow_saved_regs && has_unapproved_saved_reg) {
     std::string err = fmt::format(
         "ASM Function {}'s coloring using the following callee-saved registers: ", env->name());
     for (const auto& x : allocs.used_saved_regs) {
-      err += x.print();
-      err += " ";
+      if (!is_goal_context_reg(x)) {
+        err += fmt::format("{}(id={}) ", x.print(), x.id());
+      }
     }
     err.pop_back();
     err.push_back('.');
@@ -583,6 +595,12 @@ void CodeGenerator::do_asm_function_arm64(FunctionEnv* env, int f_idx, bool allo
     if (!allocs.stack_ops.at(ir_idx).ops.empty()) {
       throw std::runtime_error("ASM Function used a bonus op.");
     }
-    ir->do_codegen_arm64(&m_gen, allocs, i_rec);
+    try {
+      ir->do_codegen_arm64(&m_gen, allocs, i_rec);
+    } catch (const std::exception& e) {
+      throw std::runtime_error(
+          fmt::format("ASM Function {} IR {} ({}): {}", env->name(), ir_idx, ir->print(),
+                      e.what()));
+    }
   }
 }

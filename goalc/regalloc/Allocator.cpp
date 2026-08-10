@@ -157,7 +157,10 @@ bool check_constrained_alloc(RegAllocCache* cache, const AllocationInput& in) {
     if (constr.contrain_everywhere) {
       auto& lr = cache->live_ranges.at(constr.ireg.id);
       for (int i = lr.min; i <= lr.max; i++) {
-        if (!lr.conflicts_at(i, constr.desired_register)) {
+        const auto& ass = lr.get(i);
+        if (!ass.is_assigned() ||
+            !registers_overlap(in.instr_set, ass.reg, constr.ireg.reg_class,
+                               constr.desired_register, constr.ireg.reg_class)) {
           lg::print("[RegAlloc Error] There are conflicting constraints on {}: {} and {}\n",
                     constr.ireg.to_string(), constr.desired_register.print(),
                     cache->live_ranges.at(constr.ireg.id).get(i).to_string());
@@ -165,8 +168,10 @@ bool check_constrained_alloc(RegAllocCache* cache, const AllocationInput& in) {
         }
       }
     } else {
-      if (!cache->live_ranges.at(constr.ireg.id)
-               .conflicts_at(constr.instr_idx, constr.desired_register)) {
+      const auto& ass = cache->live_ranges.at(constr.ireg.id).get(constr.instr_idx);
+      if (!ass.is_assigned() ||
+          !registers_overlap(in.instr_set, ass.reg, constr.ireg.reg_class,
+                             constr.desired_register, constr.ireg.reg_class)) {
         lg::print("[RegAlloc Error] There are conflicting constraints on {}: {} and {}\n",
                   constr.ireg.to_string(), constr.desired_register.print(),
                   cache->live_ranges.at(constr.ireg.id).get(constr.instr_idx).to_string());
@@ -187,7 +192,9 @@ bool check_constrained_alloc(RegAllocCache* cache, const AllocationInput& in) {
         auto& ass1 = lr1.get(i);
         if (ass1.kind != Assignment::Kind::UNASSIGNED) {
           auto& ass2 = lr2.get(i);
-          if (ass1.occupies_same_reg(ass2)) {
+          if (ass1.is_assigned() && ass2.is_assigned() &&
+              registers_overlap(in.instr_set, ass1.reg, cache->iregs.at(idx1).reg_class,
+                                ass2.reg, cache->iregs.at(idx2).reg_class)) {
             // todo, this error won't be helpful
             lg::print(
                 "[RegAlloc Error] Cannot satisfy constraints at instruction {} due to constraints "
@@ -230,7 +237,10 @@ bool can_var_be_assigned(int var,
         continue;
       }
       // LR's overlap
-      if (/*(instr != other_lr.max) && */ other_lr.conflicts_at(instr, ass)) {
+      const auto& other_ass = other_lr.get(instr);
+      if (other_ass.is_assigned() &&
+          registers_overlap(in.instr_set, other_ass.reg, cache->iregs.at(other_idx).reg_class,
+                            ass.reg, cache->iregs.at(var).reg_class)) {
         bool allowed_by_move_eliminator = false;
         if (move_eliminator) {
           if (enable_fancy_coloring) {
@@ -268,26 +278,24 @@ bool can_var_be_assigned(int var,
 
   // can clobber on the last one or first one - check that we don't interfere with a clobber
   for (int instr = lr.min + 1; instr <= lr.max - 1; instr++) {
-    for (auto clobber : in.instructions.at(instr).clobber) {
-      if (ass.occupies_reg(clobber)) {
-        if (debug_trace >= 1) {
-          printf("at idx %d clobber\n", instr);
-        }
-
-        return false;
+    if (in.instructions.at(instr).clobbers(ass.reg, cache->iregs.at(var).reg_class,
+                                           in.instr_set)) {
+      if (debug_trace >= 1) {
+        printf("at idx %d clobber\n", instr);
       }
+
+      return false;
     }
   }
 
   for (int instr = lr.min; instr <= lr.max; instr++) {
-    for (auto exclusive : in.instructions.at(instr).exclude) {
-      if (ass.occupies_reg(exclusive)) {
-        if (debug_trace >= 1) {
-          printf("at idx %d exclusive conflict\n", instr);
-        }
-
-        return false;
+    if (in.instructions.at(instr).excludes(ass.reg, cache->iregs.at(var).reg_class,
+                                           in.instr_set)) {
+      if (debug_trace >= 1) {
+        printf("at idx %d exclusive conflict\n", instr);
       }
+
+      return false;
     }
   }
 
@@ -321,7 +329,10 @@ bool assignment_ok_at(int var,
       continue;
     }
 
-    if (/*(idx != other_lr.max) &&*/ other_lr.conflicts_at(idx, ass)) {
+    const auto& other_ass = other_lr.get(idx);
+    if (other_ass.is_assigned() &&
+        registers_overlap(in.instr_set, other_ass.reg, cache->iregs.at(other_idx).reg_class,
+                          ass.reg, cache->iregs.at(var).reg_class)) {
       bool allowed_by_move_eliminator = false;
       if (move_eliminator) {
         if (enable_fancy_coloring) {
@@ -357,25 +368,23 @@ bool assignment_ok_at(int var,
 
   // check we aren't violating a clobber
   if (idx != lr.min && idx != lr.max) {
-    for (auto clobber : in.instructions.at(idx).clobber) {
-      if (ass.occupies_reg(clobber)) {
-        if (debug_trace >= 2) {
-          printf("at idx %d clobber\n", idx);
-        }
-
-        return false;
-      }
-    }
-  }
-
-  for (auto exclusive : in.instructions.at(idx).exclude) {
-    if (ass.occupies_reg(exclusive)) {
+    if (in.instructions.at(idx).clobbers(ass.reg, cache->iregs.at(var).reg_class,
+                                         in.instr_set)) {
       if (debug_trace >= 2) {
-        printf("at idx %d exclusive conflict\n", idx);
+        printf("at idx %d clobber\n", idx);
       }
 
       return false;
     }
+  }
+
+  if (in.instructions.at(idx).excludes(ass.reg, cache->iregs.at(var).reg_class,
+                                       in.instr_set)) {
+    if (debug_trace >= 2) {
+      printf("at idx %d exclusive conflict\n", idx);
+    }
+
+    return false;
   }
 
   // check we aren't violating ourselves
@@ -819,9 +828,19 @@ AllocationResult allocate_registers(const AllocationInput& input) {
   result.stack_slots_for_vars = input.stack_slots_for_stack_vars;
 
   // check for use of saved registers
-  for (auto sr : emitter::get_register_info(cache.instr_set).get_all_saved()) {
+  const auto& register_info = emitter::get_register_info(cache.instr_set);
+  for (auto sr : register_info.get_all_saved()) {
     bool uses_sr = false;
     for (auto& lr : cache.live_ranges) {
+      if (!lr.seen) {
+        continue;
+      }
+      const bool saved_is_simd = register_info.is_saved_xmm(sr);
+      const bool variable_is_simd =
+          emitter::reg_class_to_hw(cache.iregs.at(lr.var).reg_class) == emitter::HWRegKind::XMM;
+      if (saved_is_simd != variable_is_simd) {
+        continue;
+      }
       for (int instr_idx = lr.min; instr_idx <= lr.max; instr_idx++) {
         if (lr.get(instr_idx).reg == sr) {
           uses_sr = true;

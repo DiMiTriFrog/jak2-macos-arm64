@@ -59,7 +59,7 @@ int get_stack_offset(const RegVal* rv, const AllocationResult& allocs) {
 Register get_no_color_reg(const RegVal* rv) {
   if (!rv->rlet_constraint().has_value()) {
     throw std::runtime_error(
-        "Accessed a non-rlet constrained variable without the coloring system.");
+        fmt::format("Accessed non-rlet variable {} without the coloring system.", rv->print()));
   }
   return rv->rlet_constraint().value();
 }
@@ -187,6 +187,15 @@ emitter::StaticRecord emit_arm64_literal(emitter::ObjectGenerator* gen,
   gen->get_static_data(lit).assign(8, 0);
   gen->link_instruction_static(instr, lit, 0);
   return lit;
+}
+
+void emit_arm64_literal_address(emitter::ObjectGenerator* gen,
+                                emitter::IR_Record irec,
+                                const emitter::StaticRecord& literal,
+                                emitter::Register dst) {
+  auto adr = gen->add_instr(IGen::ARM64::adr_gpr64(X17, 4), irec);
+  gen->link_instruction_static(adr, literal, 0);
+  gen->add_instr(IGen::add_gpr64_gpr64(*gen, dst, X17), irec);
 }
 }  // namespace
 
@@ -573,7 +582,8 @@ RegAllocInstr IR_FunctionCall::to_rai() {
   for (int i = 0; i < emitter::RegisterInfo::N_REGS; i++) {
     auto& info = emitter::get_register_info(m_instr_set).get_info(i);
     if (info.temp()) {
-      rai.clobber.emplace_back(i);
+      rai.add_clobber(i, emitter::Register(i).is_xmm(m_instr_set) ? RegClass::INT_128
+                                                                    : RegClass::GPR_64);
     }
   }
   if (m_instr_set == emitter::InstructionSet::ARM64) {
@@ -582,7 +592,7 @@ RegAllocInstr IR_FunctionCall::to_rai() {
     for (int i = 0; i < emitter::RegisterInfo::N_REGS; i++) {
       auto& info = emitter::gRegInfoARM64.get_simd_info(i);
       if (info.temp()) {
-        rai.clobber.emplace_back(i);
+        rai.add_clobber(i, RegClass::INT_128);
       }
     }
   }
@@ -699,9 +709,12 @@ void IR_StaticVarAddr::do_codegen_arm64(emitter::ObjectGenerator* gen,
   auto dr = get_reg(m_dest, allocs, irec);
   auto lit = emit_arm64_literal(gen, irec, dr);
   gen->link_static_pointer_to_data(lit, 0, m_src->rec, m_src->get_addr_offset());
-  gen->add_instr(IGen::sub_gpr64_gpr64(*gen, dr,
-                                       emitter::get_register_info(gen->instr_set()).get_offset_reg()),
-                 irec);
+  if (gen->is_cross_segment(lit, m_src->rec)) {
+    emit_arm64_literal_address(gen, irec, lit, dr);
+    gen->add_instr(IGen::sub_gpr64_gpr64(
+                       *gen, dr, emitter::get_register_info(gen->instr_set()).get_offset_reg()),
+                   irec);
+  }
 }
 
 /////////////////////
@@ -734,10 +747,14 @@ void IR_FunctionAddr::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                        emitter::IR_Record irec) {
   auto dr = get_reg(m_dest, allocs, irec);
   auto lit = emit_arm64_literal(gen, irec, dr);
-  gen->link_static_pointer_to_function(lit, 0, gen->get_existing_function_record(m_src->idx_in_file));
-  gen->add_instr(IGen::sub_gpr64_gpr64(*gen, dr,
-                                       emitter::get_register_info(gen->instr_set()).get_offset_reg()),
-                 irec);
+  auto target = gen->get_existing_function_record(m_src->idx_in_file);
+  gen->link_static_pointer_to_function(lit, 0, target);
+  if (gen->is_cross_segment(lit, target)) {
+    emit_arm64_literal_address(gen, irec, lit, dr);
+    gen->add_instr(IGen::sub_gpr64_gpr64(
+                       *gen, dr, emitter::get_register_info(gen->instr_set()).get_offset_reg()),
+                   irec);
+  }
 }
 
 /////////////////////
@@ -805,7 +822,7 @@ RegAllocInstr IR_IntegerMath::to_rai() {
 
   if (m_kind == IntegerMathKind::IDIV_32 || m_kind == IntegerMathKind::IMOD_32 ||
       m_kind == IntegerMathKind::UDIV_32 || m_kind == IntegerMathKind::UMOD_32) {
-    rai.exclude.emplace_back(emitter::RDX);
+    rai.add_exclude(emitter::RDX, RegClass::GPR_64);
   }
   return rai;
 }
@@ -1168,11 +1185,25 @@ void IR_StaticVarLoad::do_codegen_arm64(emitter::ObjectGenerator* gen,
     ASSERT(load_info.requires_load == true);
     auto lit = emit_arm64_literal(gen, irec, X16);
     gen->link_static_pointer_to_data(lit, 0, m_src->rec, 0);
+    if (gen->is_cross_segment(lit, m_src->rec)) {
+      emit_arm64_literal_address(gen, irec, lit, X16);
+    } else {
+      gen->add_instr(IGen::add_gpr64_gpr64(
+                         *gen, X16, emitter::get_register_info(gen->instr_set()).get_offset_reg()),
+                     irec);
+    }
     gen->add_instr(IGen::load32_xmm32_gpr64_plus_s32(*gen, get_reg(m_dest, allocs, irec), X16, 0),
                    irec);
   } else if (m_dest->ireg().reg_class == RegClass::VECTOR_FLOAT) {
     auto lit = emit_arm64_literal(gen, irec, X16);
     gen->link_static_pointer_to_data(lit, 0, m_src->rec, 0);
+    if (gen->is_cross_segment(lit, m_src->rec)) {
+      emit_arm64_literal_address(gen, irec, lit, X16);
+    } else {
+      gen->add_instr(IGen::add_gpr64_gpr64(
+                         *gen, X16, emitter::get_register_info(gen->instr_set()).get_offset_reg()),
+                     irec);
+    }
     gen->add_instr(IGen::load128_simd128_gpr64(*gen, get_reg(m_dest, allocs, irec), X16), irec);
   } else {
     ASSERT(false);
@@ -2296,7 +2327,7 @@ RegAllocInstr IR_Int128Math3Asm::to_rai(emitter::InstructionSet instr_set) {
   auto rai = to_rai();
   if (instr_set == emitter::InstructionSet::ARM64 && m_kind == Kind::PACKUSWB) {
     // ARM64 vpackuswb packs through V16 so dst may alias either source.
-    rai.exclude.push_back(emitter::X16);
+    rai.add_exclude(emitter::X16, RegClass::GPR_64);
   }
   return rai;
 }
@@ -2608,7 +2639,7 @@ RegAllocInstr IR_Int128Math2Asm::to_rai(emitter::InstructionSet instr_set) {
        *m_imm > 0 && *m_imm < 16);
   if (instr_set == emitter::InstructionSet::ARM64 && uses_scratch) {
     // ARM64 byte shifts and shuffles build temporary vectors in X16/V16.
-    rai.exclude.push_back(emitter::X16);
+    rai.add_exclude(emitter::X16, RegClass::GPR_64);
   }
   return rai;
 }
@@ -2788,7 +2819,7 @@ RegAllocInstr IR_BlendVF::to_rai(emitter::InstructionSet instr_set) {
   if (instr_set == emitter::InstructionSet::ARM64) {
     // ARM64 blend_vf builds its selector in X16/V16.  The shared numeric
     // register id means one exclusion protects both register classes.
-    rai.exclude.push_back(emitter::X16);
+    rai.add_exclude(emitter::X16, RegClass::GPR_64);
   }
   return rai;
 }
@@ -2875,7 +2906,7 @@ RegAllocInstr IR_SwizzleVF::to_rai(emitter::InstructionSet instr_set) {
   auto rai = to_rai();
   if (instr_set == emitter::InstructionSet::ARM64) {
     // ARM64 swizzle_vf uses X16/V16 for its byte-index table.
-    rai.exclude.push_back(emitter::X16);
+    rai.add_exclude(emitter::X16, RegClass::GPR_64);
   }
   return rai;
 }

@@ -96,6 +96,8 @@ class ObjectGenerator {
                                int offset);
   void link_instruction_to_function(const InstructionRecord& instr,
                                     const FunctionRecord& target_func);
+  bool is_cross_segment(const StaticRecord& source, const StaticRecord& dest) const;
+  bool is_cross_segment(const StaticRecord& source, const FunctionRecord& dest) const;
   ObjectGeneratorStats get_stats() const;
   void count_eliminated_move();
 
@@ -207,6 +209,12 @@ class ObjectGenerator {
     int dest = -1;
   };
 
+  struct CrossSegmentLink {
+    int target_segment = -1;
+    int source = -1;
+    int dest = -1;
+  };
+
   template <typename T>
   using seg_vector = std::array<std::vector<T>, N_SEG>;
 
@@ -238,6 +246,7 @@ class ObjectGenerator {
   seg_map<int> m_sym_links_by_seg;
   seg_vector<RipLink> m_rip_links_by_seg;
   seg_vector<PointerLink> m_pointer_links_by_seg;
+  seg_vector<CrossSegmentLink> m_cross_segment_links_by_seg;
 
   std::vector<FunctionRecord> m_all_function_records;
 

@@ -32,6 +32,9 @@ const RelocationFieldInfo& relocation_info(RelocationType type) {
       // MOVZ/MOVK: imm16 at [20:5], hw (shift) read from the instruction
       {RelocationType::Arm64MovWide16, "arm64-movwide16", 5, 16, false, 1, false, 0, 0xFFFF, 0, 1,
        false},
+      // ADR: immlo at [30:29], immhi at [23:5]
+      {RelocationType::Arm64Adr21, "arm64-adr21", 5, 19, true, 1, true, -(1LL << 20),
+       (1LL << 20) - 1, 0, 1, false},
   };
   int idx = static_cast<int>(type) - 1;
   if (idx < 0 || idx >= (int)(sizeof(kInfos) / sizeof(kInfos[0]))) {
@@ -189,7 +192,7 @@ bool apply_relocation(RelocationType type,
 }
 
 std::optional<std::vector<u8>> serialize_relocation(const Relocation& r) {
-  if (static_cast<int>(r.type) < 1 || static_cast<int>(r.type) > 8) {
+  if (static_cast<int>(r.type) < 1 || static_cast<int>(r.type) > 9) {
     return std::nullopt;
   }
   std::vector<u8> data;
@@ -211,7 +214,7 @@ std::optional<Relocation> deserialize_relocation(const std::vector<u8>& data) {
     return std::nullopt;
   }
   u8 tag = data[0];
-  if (tag < 1 || tag > 8) {
+  if (tag < 1 || tag > 9) {
     return std::nullopt;
   }
   u32 pos = 0;

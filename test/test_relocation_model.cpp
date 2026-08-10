@@ -22,7 +22,7 @@ std::vector<u8> make_code(u32 base) {
 }  // namespace
 
 TEST(RelocationModel, SerializeRoundTrip) {
-  for (int t = 1; t <= 8; t++) {
+  for (int t = 1; t <= 9; t++) {
     Relocation r{static_cast<RelocationType>(t), 12345, -0x12345678};
     auto data = serialize_relocation(r);
     ASSERT_TRUE(data.has_value());
@@ -37,12 +37,12 @@ TEST(RelocationModel, SerializeRoundTrip) {
 
 TEST(RelocationModel, UnknownTypeRejected) {
   EXPECT_FALSE(serialize_relocation({static_cast<RelocationType>(0), 0, 0}).has_value());
-  EXPECT_FALSE(serialize_relocation({static_cast<RelocationType>(9), 0, 0}).has_value());
+  EXPECT_FALSE(serialize_relocation({static_cast<RelocationType>(10), 0, 0}).has_value());
   EXPECT_FALSE(serialize_relocation({static_cast<RelocationType>(255), 0, 0}).has_value());
   // deserialize: unknown tag and truncated payloads rejected.
   std::vector<u8> bad = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   EXPECT_FALSE(deserialize_relocation(bad).has_value());
-  std::vector<u8> bad2 = {9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  std::vector<u8> bad2 = {10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   EXPECT_FALSE(deserialize_relocation(bad2).has_value());
   std::vector<u8> short_data = {1, 2, 3};
   EXPECT_FALSE(deserialize_relocation(short_data).has_value());
@@ -105,6 +105,34 @@ TEST(RelocationModel, AdrpPage21) {
   // one past -> rejected
   EXPECT_FALSE(apply_relocation(RelocationType::Arm64AdrpPage21, code.data(), 0, pc, max_target + 0x1000, 0, &err));
   EXPECT_NE(err.find("out of range"), std::string::npos);
+}
+
+TEST(RelocationModel, Adr21) {
+  auto code = make_code(0x10000000);
+  s64 pc = 0x1FF8;
+  std::string err;
+
+  // ADR uses a byte displacement from the instruction address, even across a
+  // 4 KiB page boundary.
+  EXPECT_TRUE(apply_relocation(RelocationType::Arm64Adr21, code.data(), 0, pc, pc + 12, 0,
+                               &err));
+  u32 w = read_word(code, 0);
+  u32 immlo = (w >> 29) & 0b11;
+  u32 immhi = (w >> 5) & 0x7FFFF;
+  EXPECT_EQ((immhi << 2) | immlo, 12u);
+
+  s64 max_target = pc + ((1LL << 20) - 1);
+  EXPECT_TRUE(apply_relocation(RelocationType::Arm64Adr21, code.data(), 0, pc, max_target, 0,
+                               &err));
+  EXPECT_FALSE(apply_relocation(RelocationType::Arm64Adr21, code.data(), 0, pc,
+                                max_target + 1, 0, &err));
+  EXPECT_NE(err.find("out of range"), std::string::npos);
+
+  s64 min_target = pc - (1LL << 20);
+  EXPECT_TRUE(apply_relocation(RelocationType::Arm64Adr21, code.data(), 0, pc, min_target, 0,
+                               &err));
+  EXPECT_FALSE(apply_relocation(RelocationType::Arm64Adr21, code.data(), 0, pc,
+                                min_target - 1, 0, &err));
 }
 
 TEST(RelocationModel, AddLo12) {

@@ -302,7 +302,11 @@ void ObjectGenerator::link_static_pointer_to_data(const StaticRecord& source,
   link.dest = dest;
   link.offset_in_source = source_offset;
   link.offset_in_dest = dest_offset;
-  ASSERT(link.source.seg == link.dest.seg);
+  if (link.source.seg != link.dest.seg) {
+    if (m_instruction_set != InstructionSet::ARM64) {
+      ASSERT_MSG(false, "static data pointer link crosses segments");
+    }
+  }
   m_static_data_temp_ptr_links_by_seg.at(source.seg).push_back(link);
 }
 
@@ -317,8 +321,22 @@ void ObjectGenerator::link_static_pointer_to_function(const StaticRecord& source
   link.source = source;
   link.offset_in_source = source_offset;
   link.dest = target_func;
-  ASSERT(target_func.seg == source.seg);
+  if (target_func.seg != source.seg && m_instruction_set != InstructionSet::ARM64) {
+    throw std::runtime_error(fmt::format(
+        "static function link crosses segments: source seg {} static {} offset {}, target seg {} "
+        "function {} id {}",
+        source.seg, source.static_id, source_offset, target_func.seg,
+        target_func.debug ? target_func.debug->name : "?", target_func.func_id));
+  }
   m_static_function_temp_ptr_links_by_seg.at(source.seg).push_back(link);
+}
+
+bool ObjectGenerator::is_cross_segment(const StaticRecord& source, const StaticRecord& dest) const {
+  return source.seg != dest.seg;
+}
+
+bool ObjectGenerator::is_cross_segment(const StaticRecord& source, const FunctionRecord& dest) const {
+  return source.seg != dest.seg;
 }
 
 void ObjectGenerator::link_instruction_static(const InstructionRecord& instr,
@@ -375,24 +393,41 @@ void ObjectGenerator::handle_temp_static_ptr_links(int seg) {
 
   for (const auto& link : m_static_data_temp_ptr_links_by_seg.at(seg)) {
     const auto& source_object = m_static_data_by_seg.at(seg).at(link.source.static_id);
-    const auto& dest_object = m_static_data_by_seg.at(seg).at(link.dest.static_id);
-    PointerLink result_link;
-    result_link.segment = seg;
-    result_link.source = source_object.location + link.offset_in_source;
-    result_link.dest = dest_object.location + link.offset_in_dest;
-    m_pointer_links_by_seg.at(seg).push_back(result_link);
+    if (link.dest.seg == seg) {
+      const auto& dest_object = m_static_data_by_seg.at(seg).at(link.dest.static_id);
+      PointerLink result_link;
+      result_link.segment = seg;
+      result_link.source = source_object.location + link.offset_in_source;
+      result_link.dest = dest_object.location + link.offset_in_dest;
+      m_pointer_links_by_seg.at(seg).push_back(result_link);
+    } else {
+      CrossSegmentLink result_link;
+      result_link.target_segment = link.dest.seg;
+      result_link.source = source_object.location + link.offset_in_source;
+      const auto& dest_object = m_static_data_by_seg.at(link.dest.seg).at(link.dest.static_id);
+      result_link.dest = dest_object.location + link.offset_in_dest;
+      m_cross_segment_links_by_seg.at(seg).push_back(result_link);
+    }
   }
 
   for (const auto& link : m_static_function_temp_ptr_links_by_seg.at(seg)) {
     const auto& source_object = m_static_data_by_seg.at(seg).at(link.source.static_id);
-    const auto& dest_function = m_function_data_by_seg.at(seg).at(link.dest.func_id);
-    ASSERT(link.dest.seg == seg);
-    int loc = dest_function.instruction_to_byte_in_data.at(0);
-    PointerLink result_link;
-    result_link.segment = seg;
-    result_link.source = source_object.location + link.offset_in_source;
-    result_link.dest = loc;
-    m_pointer_links_by_seg.at(seg).push_back(result_link);
+    if (link.dest.seg == seg) {
+      const auto& dest_function = m_function_data_by_seg.at(seg).at(link.dest.func_id);
+      int loc = dest_function.instruction_to_byte_in_data.at(0);
+      PointerLink result_link;
+      result_link.segment = seg;
+      result_link.source = source_object.location + link.offset_in_source;
+      result_link.dest = loc;
+      m_pointer_links_by_seg.at(seg).push_back(result_link);
+    } else {
+      CrossSegmentLink result_link;
+      result_link.target_segment = link.dest.seg;
+      result_link.source = source_object.location + link.offset_in_source;
+      const auto& dest_function = m_function_data_by_seg.at(link.dest.seg).at(link.dest.func_id);
+      result_link.dest = dest_function.instruction_to_byte_in_data.at(0);
+      m_cross_segment_links_by_seg.at(seg).push_back(result_link);
+    }
   }
 }
 
@@ -512,10 +547,15 @@ void ObjectGenerator::handle_temp_rip_data_links(int seg) {
       int instr_offset = function.instruction_to_byte_in_data.at(link.instr.instr_id);
       const auto& target = m_static_data_by_seg.at(link.data.seg).at(link.data.static_id);
       int target_offset = target.location + link.offset;
+      u32 word;
+      memcpy(&word, m_data_by_seg.at(seg).data() + instr_offset, sizeof(word));
+      RelocationType reloc = ((word & 0x9F000000u) == 0x10000000u)
+                                 ? RelocationType::Arm64Adr21
+                                 : RelocationType::Arm64LdrLiteral19;
       std::string err;
-      if (!apply_relocation(RelocationType::Arm64LdrLiteral19, m_data_by_seg.at(seg).data(),
-                            instr_offset, instr_offset, target_offset, 0, &err)) {
-        throw std::runtime_error(fmt::format("ARM64 literal load link failed: {}", err));
+      if (!apply_relocation(reloc, m_data_by_seg.at(seg).data(), instr_offset, instr_offset,
+                            target_offset, 0, &err)) {
+        throw std::runtime_error(fmt::format("ARM64 PC-relative link failed: {}", err));
       }
     }
     return;
@@ -644,6 +684,17 @@ void ObjectGenerator::emit_link_rip(int seg) {
     push_data<u32>(
         src_func.instruction_to_byte_in_data.at(rec.instr.instr_id) + src_instr.offset_of_disp(),
         out);
+  }
+
+  // The v3 distance link also serves ARM64 static pointer literals that cross
+  // segments.  The generated ARM code reconstructs the target address from
+  // the literal's own address, so no new persistent link kind is needed.
+  for (const auto& rec : m_cross_segment_links_by_seg.at(seg)) {
+    out.push_back(LINK_DISTANCE_TO_OTHER_SEG_64);
+    out.push_back(rec.target_segment);
+    push_data<u32>(rec.source, out);
+    push_data<u32>(rec.dest, out);
+    push_data<u32>(rec.source, out);
   }
 }
 

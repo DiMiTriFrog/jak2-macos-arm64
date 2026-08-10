@@ -187,10 +187,15 @@ class VarAssignment {
     return *m_stack_temp_regs.at(instr_idx - first_live());
   }
 
-  bool stack_bonus_op_needs_reg(const emitter::Register& reg, int instr_idx) const {
+  bool stack_bonus_op_needs_reg(const emitter::Register& reg,
+                                RegClass candidate_class,
+                                RegClass stack_class,
+                                emitter::InstructionSet instr_set,
+                                int instr_idx) const {
     ASSERT(assigned_to_stack());
     auto& stack_reg = m_stack_temp_regs.at(instr_idx - m_first_live);
-    return stack_reg && (*stack_reg == reg);
+    return stack_reg && registers_overlap(instr_set, *stack_reg, stack_class, reg,
+                                          candidate_class);
   }
 
   // result get
@@ -661,7 +666,9 @@ bool check_constrained_alloc(RACache* cache, const AllocationInput& in) {
         }
         auto& lr2 = cache->vars.at(idx2);
         if (lr1.assigned_to_reg() && lr2.assigned_to_reg()) {
-          if (lr1.reg() == lr2.reg() && !safe_overlap(in, *cache, lr1, lr2, i)) {
+          if (registers_overlap(in.instr_set, lr1.reg(), cache->iregs.at(idx1).reg_class,
+                                lr2.reg(), cache->iregs.at(idx2).reg_class) &&
+              !safe_overlap(in, *cache, lr1, lr2, i)) {
             // todo, this error won't be helpful
             lg::print(
                 "[RegAlloc Error] {} Cannot satisfy constraints at instruction {} due to "
@@ -727,7 +734,9 @@ bool check_register_assign_at(const AllocationInput& input,
     if (other_var.unassigned()) {
       // okay!
     } else if (other_var.assigned_to_reg()) {
-      if (other_var.assigned_to_reg(reg)) {
+      if (registers_overlap(input.instr_set, other_var.reg(),
+                            cache.iregs.at(other_idx).reg_class, reg,
+                            cache.iregs.at(var_idx).reg_class)) {
         // assigned to the same register as us!
         if (!safe_overlap(input, cache, cache.vars.at(var_idx), other_var, instr_idx)) {
           return false;
@@ -735,7 +744,9 @@ bool check_register_assign_at(const AllocationInput& input,
       }
     } else {
       // assigned to stack TODO
-      if (other_var.stack_bonus_op_needs_reg(reg, instr_idx)) {
+      if (other_var.stack_bonus_op_needs_reg(
+              reg, cache.iregs.at(var_idx).reg_class, cache.iregs.at(other_idx).reg_class,
+              input.instr_set, instr_idx)) {
         return false;
       }
     }
@@ -749,7 +760,7 @@ bool check_register_assign_at(const AllocationInput& input,
 
   const auto& instr = input.instructions.at(instr_idx);
 
-  if (vector_contains(instr.clobber, reg)) {
+  if (instr.clobbers(reg, cache.iregs.at(var_idx).reg_class, input.instr_set)) {
     // there's two cases where this is okay.
     // 1: if we aren't live-out. The clobber won't clobber anything.
     if (!cache.liveout_per_instr.at(instr_idx)[var_idx]) {
@@ -763,7 +774,7 @@ bool check_register_assign_at(const AllocationInput& input,
     }
   }
 
-  if (vector_contains(instr.exclude, reg)) {
+  if (instr.excludes(reg, cache.iregs.at(var_idx).reg_class, input.instr_set)) {
     return false;
   }
 
@@ -801,7 +812,9 @@ bool check_register_assign(const AllocationInput& input,
         // skip unassigned.
         continue;
       } else if (other_var.assigned_to_reg()) {
-        if (other_var.assigned_to_reg(reg)) {
+        if (registers_overlap(input.instr_set, other_var.reg(),
+                              cache.iregs.at(other_idx).reg_class, reg,
+                              cache.iregs.at(var_idx).reg_class)) {
           // assigned to the same register as us!
           if (!safe_overlap(input, cache, this_var, other_var, instr)) {
             ;
@@ -810,7 +823,9 @@ bool check_register_assign(const AllocationInput& input,
         }
       } else {
         // assigned to stack TODO
-        if (other_var.stack_bonus_op_needs_reg(reg, instr)) {
+        if (other_var.stack_bonus_op_needs_reg(
+                reg, cache.iregs.at(var_idx).reg_class, cache.iregs.at(other_idx).reg_class,
+                input.instr_set, instr)) {
           return false;
         }
       }
@@ -824,7 +839,7 @@ bool check_register_assign(const AllocationInput& input,
   // loop over our live range
   for (int instr_idx = this_var.first_live(); instr_idx <= this_var.last_live(); instr_idx++) {
     const auto& instr = input.instructions.at(instr_idx);
-    if (vector_contains(instr.exclude, reg)) {
+    if (instr.excludes(reg, cache.iregs.at(var_idx).reg_class, input.instr_set)) {
       return false;
     }
 
@@ -833,7 +848,7 @@ bool check_register_assign(const AllocationInput& input,
       continue;
     }
 
-    if (vector_contains(instr.clobber, reg)) {
+    if (instr.clobbers(reg, cache.iregs.at(var_idx).reg_class, input.instr_set)) {
       // there's two cases where this is okay.
       // 1: if we aren't live-out. The clobber won't clobber anything.
       if (!cache.liveout_per_instr.at(instr_idx)[var_idx]) {
@@ -1246,9 +1261,19 @@ AllocationResult allocate_registers_v2(const AllocationInput& input) {
   result.stack_slots_for_vars = input.stack_slots_for_stack_vars;
 
   // check for use of saved registers
-  for (auto sr : emitter::get_register_info(input.instr_set).get_all_saved()) {
+  const auto& register_info = emitter::get_register_info(input.instr_set);
+  for (auto sr : register_info.get_all_saved()) {
     bool uses_sr = false;
     for (auto& lr : cache.vars) {
+      if (!lr.seen()) {
+        continue;
+      }
+      const bool saved_is_simd = register_info.is_saved_xmm(sr);
+      const bool variable_is_simd =
+          emitter::reg_class_to_hw(cache.iregs.at(lr.var()).reg_class) == emitter::HWRegKind::XMM;
+      if (saved_is_simd != variable_is_simd) {
+        continue;
+      }
       for (int instr_idx = lr.first_live(); instr_idx <= lr.last_live(); instr_idx++) {
         if (lr.assigned_to_reg()) {
           if (lr.assigned_to_reg(sr)) {
@@ -1256,7 +1281,9 @@ AllocationResult allocate_registers_v2(const AllocationInput& input) {
             break;
           }
         } else if (lr.assigned_to_stack()) {
-          if (lr.stack_bonus_op_needs_reg(sr, instr_idx)) {
+          if (lr.stack_bonus_op_needs_reg(sr, cache.iregs.at(lr.var()).reg_class,
+                                          cache.iregs.at(lr.var()).reg_class, input.instr_set,
+                                          instr_idx)) {
             uses_sr = true;
             break;
           }

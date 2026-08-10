@@ -325,6 +325,9 @@ InstructionARM64 store128_xmm128_reg_offset(Register base, Register xmm_val, s64
 
 InstructionARM64 load64_pcRel_s32(Register dest, s64 offset);
 
+//! ADR <Xd>, <label>, with the displacement patched after object layout.
+InstructionARM64 adr_gpr64(Register dest, s64 offset);
+
 InstructionARM64 load32s_pcRel_s32(Register dest, s64 offset);
 
 InstructionARM64 load32u_pcRel_s32(Register dest, s64 offset);

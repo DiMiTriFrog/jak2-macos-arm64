@@ -1815,6 +1815,15 @@ InstructionARM64 load64_pcRel_s32(Register dest, s64 offset) {
   return InstructionARM64(Base(0b01011000, 8), Imm19(offset / 4), Rt(dest.id()));
 }
 
+InstructionARM64 adr_gpr64(Register dest, s64 offset) {
+  ASSERT(dest.is_gpr(instr_set));
+  ASSERT_MSG(offset != 0,
+             "PC Relative offset isn't 0 at encoding time, actually encode it properly!");
+  // https://www.scs.stanford.edu/~zyedidia/arm64/adr.html
+  // ADR <Xd>, <label>
+  return InstructionARM64(Base(0b00010000, 8), Immlo(0), Immhi(0), Rd(dest.id()));
+}
+
 InstructionARM64 load32s_pcRel_s32(Register dest, s64 offset) {
   ASSERT(dest.is_gpr(instr_set));
   ASSERT_MSG(offset != 0,

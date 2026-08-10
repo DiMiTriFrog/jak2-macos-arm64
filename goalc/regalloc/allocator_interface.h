@@ -16,6 +16,20 @@
 #include "goalc/regalloc/IRegSet.h"
 #include "goalc/regalloc/IRegister.h"
 
+inline bool registers_overlap(emitter::InstructionSet instr_set,
+                               emitter::Register a,
+                               RegClass a_class,
+                               emitter::Register b,
+                               RegClass b_class) {
+  if (a.id() != b.id()) {
+    return false;
+  }
+  if (instr_set != emitter::InstructionSet::ARM64) {
+    return true;
+  }
+  return emitter::reg_class_to_hw(a_class) == emitter::reg_class_to_hw(b_class);
+}
+
 /*!
  * Information about an instruction needed for register allocation.
  * The model is this:
@@ -29,6 +43,10 @@
 struct RegAllocInstr {
   std::vector<emitter::Register> clobber;  // written, but safe to use as input/output
   std::vector<emitter::Register> exclude;  // written, unsafe to use for input/output
+  // ARM64 uses the same numeric ids for GPRs and SIMD registers. Keep the
+  // hardware class alongside the register id for clobber/exclude entries.
+  std::vector<RegClass> clobber_classes;
+  std::vector<RegClass> exclude_classes;
   std::vector<IRegister> write;            // results go in here
   std::vector<IRegister> read;             // inputs go in here
   std::vector<int> jumps;                  // RegAllocInstr indexes of possible jumps
@@ -54,6 +72,48 @@ struct RegAllocInstr {
     for (const auto& x : write) {
       if (x.id == id)
         return true;
+    }
+    return false;
+  }
+
+  void add_clobber(emitter::Register reg, RegClass reg_class) {
+    clobber.push_back(reg);
+    clobber_classes.push_back(reg_class);
+  }
+
+  void add_exclude(emitter::Register reg, RegClass reg_class) {
+    exclude.push_back(reg);
+    exclude_classes.push_back(reg_class);
+  }
+
+  bool clobbers(emitter::Register reg,
+                RegClass reg_class,
+                emitter::InstructionSet instr_set) const {
+    for (size_t i = 0; i < clobber.size(); i++) {
+      const auto listed_class = i < clobber_classes.size() &&
+                                        clobber_classes.at(i) != RegClass::INVALID
+                                    ? clobber_classes.at(i)
+                                    : (clobber.at(i).is_xmm(instr_set) ? RegClass::INT_128
+                                                                        : RegClass::GPR_64);
+      if (registers_overlap(instr_set, clobber.at(i), listed_class, reg, reg_class)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool excludes(emitter::Register reg,
+                RegClass reg_class,
+                emitter::InstructionSet instr_set) const {
+    for (size_t i = 0; i < exclude.size(); i++) {
+      const auto listed_class = i < exclude_classes.size() &&
+                                        exclude_classes.at(i) != RegClass::INVALID
+                                    ? exclude_classes.at(i)
+                                    : (exclude.at(i).is_xmm(instr_set) ? RegClass::INT_128
+                                                                        : RegClass::GPR_64);
+      if (registers_overlap(instr_set, exclude.at(i), listed_class, reg, reg_class)) {
+        return true;
+      }
     }
     return false;
   }

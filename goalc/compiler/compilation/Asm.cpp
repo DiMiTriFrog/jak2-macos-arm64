@@ -17,7 +17,42 @@ emitter::Register Compiler::parse_register(const goos::Object& code) {
   auto nas = code.as_symbol();
   for (int i = 0; i < 32; i++) {
     if (std::string_view(nas.name_ptr) == reg_names[i]) {
-      return emitter::Register(i);
+      if (m_instr_set == emitter::InstructionSet::X86) {
+        return emitter::Register(i);
+      }
+
+      // GOAL asm forms use the historical x86 register names.  On ARM64
+      // those names identify the GOAL ABI role, not the numeric ARM register
+      // id.  Keep x86 parsing byte-for-byte unchanged and map each role to
+      // the Apple ARM64 register that carries it.
+      static const emitter::Register kArmGprMap[] = {
+          emitter::X8,  // rax: return/temp
+          emitter::X3,  // rcx: argument 3
+          emitter::X2,  // rdx: argument 2
+          emitter::X19, // rbx: saved
+          emitter::SP,  // rsp: stack pointer
+          emitter::X29, // rbp: frame pointer/saved
+          emitter::X1,  // rsi: argument 1
+          emitter::X0,  // rdi: argument 0
+          emitter::X4,  // r8: argument 4
+          emitter::X5,  // r9: argument 5
+          emitter::X6,  // r10: argument 6
+          emitter::X7,  // r11: argument 7
+          emitter::X23, // r12: saved
+          emitter::X20, // r13: process pointer
+          emitter::X21, // r14: symbol table
+          emitter::X22, // r15: GOAL memory offset
+      };
+      static const emitter::Register kArmSimdMap[] = {
+          emitter::V0,  emitter::V1,  emitter::V2,  emitter::V3,
+          emitter::V4,  emitter::V5,  emitter::V6,  emitter::V7,
+          emitter::V8,  emitter::V9,  emitter::V10, emitter::V11,
+          emitter::V12, emitter::V13, emitter::V14, emitter::V15,
+      };
+      if (i < 16) {
+        return kArmGprMap[i];
+      }
+      return kArmSimdMap[i - 16];
     }
   }
 
@@ -38,6 +73,12 @@ Val* Compiler::compile_rlet(const goos::Object& form, const goos::Object& rest, 
 
   std::vector<IRegConstraint> constraints;
   std::vector<RegVal*> reset_regs;
+
+  const auto same_register_class = [&](const IRegConstraint& constraint,
+                                       RegClass requested_class) {
+    return emitter::reg_class_to_hw(constraint.ireg.reg_class) ==
+           emitter::reg_class_to_hw(requested_class);
+  };
 
   for_each_in_list(defs, [&](const goos::Object& o) {
     // (new-place [:reg old-place] [:type type-spec] [:class reg-type] [:bind #f|lexical|lambda])
@@ -80,20 +121,24 @@ Val* Compiler::compile_rlet(const goos::Object& form, const goos::Object& rest, 
       auto desired_register = parse_register(def_args.named.at("reg"));
       // we want to see if we already created a variable for this register, and reuse it.
       for (auto& constr : fenv->constraints()) {
-        if (constr.desired_register == desired_register && constr.contrain_everywhere) {
+        if (constr.desired_register == desired_register && constr.contrain_everywhere &&
+            same_register_class(constr, register_class)) {
           auto reg_val_ptr = std::make_unique<RegVal>(constr.ireg, ts);
           new_place_reg = fenv->push_reg_val(std::move(reg_val_ptr));
           new_place_reg->mark_as_settable();
+          new_place_reg->set_rlet_constraint(desired_register);
           break;
         }
       }
 
       if (!new_place_reg) {
         for (auto& constr : constraints) {
-          if (constr.desired_register == desired_register && constr.contrain_everywhere) {
+          if (constr.desired_register == desired_register && constr.contrain_everywhere &&
+              same_register_class(constr, register_class)) {
             auto reg_val_ptr = std::make_unique<RegVal>(constr.ireg, ts);
             new_place_reg = fenv->push_reg_val(std::move(reg_val_ptr));
             new_place_reg->mark_as_settable();
+            new_place_reg->set_rlet_constraint(desired_register);
             break;
           }
         }

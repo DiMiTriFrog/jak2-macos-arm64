@@ -285,6 +285,28 @@ goos::Object MakeSystem::handle_set_output_prefix(
   } else {
     prefix += suffix;
   }
+
+  // Project files commonly map $OUT to the unsuffixed output directory before
+  // selecting the compiler output prefix. Keep generated tools (CGOs, text,
+  // and copied ISO files) in the same architecture-specific directory as
+  // object files. The x86-64 suffix is empty, so its path remapping remains
+  // byte-for-byte unchanged.
+  if (suffix[0]) {
+    const std::string suffix_string(suffix);
+    auto out_it = m_path_map.path_remap.find("$OUT");
+    if (out_it != m_path_map.path_remap.end()) {
+      auto& out_path = out_it->second;
+      while (!out_path.empty() && out_path.back() == '/') {
+        out_path.pop_back();
+      }
+      if (out_path.size() < suffix_string.size() ||
+          out_path.compare(out_path.size() - suffix_string.size(), suffix_string.size(),
+                           suffix_string) != 0) {
+        out_path += suffix;
+      }
+      out_path += '/';
+    }
+  }
   m_path_map.output_prefix = prefix;
   return goos::Object::make_empty_list();
 }
