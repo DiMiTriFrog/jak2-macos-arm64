@@ -6,23 +6,18 @@
  * The CodeTester can't be used for tests requiring the full GOAL language/linking.
  */
 
+#include "CodeTester.h"
+
+#include <cstdio>
 #include <stdexcept>
+
+#include "IGen.h"
 
 #include "common/common_types.h"
 
 #include "goalc/emitter/Instruction.h"
 #include "goalc/emitter/InstructionSet.h"
 #include "goalc/emitter/Register.h"
-#ifdef OS_POSIX
-#include <sys/mman.h>
-#elif _WIN32
-#include "third-party/mman/mman.h"
-#endif
-
-#include <cstdio>
-
-#include "CodeTester.h"
-#include "IGen.h"
 
 namespace emitter {
 
@@ -173,24 +168,10 @@ void CodeTester::clear() {
  * Execute the buffered code with no arguments, return the value of RAX.
  */
 u64 CodeTester::execute() {
-#if defined(__aarch64__)
-  // allegedly needed because ARM requires flushing after writing new instructions
-  // on x86 it does nothing
-  __builtin___clear_cache((char*)code_buffer, (char*)code_buffer + code_buffer_size);
-#endif
-  // clang-format off
-#if defined(__APPLE__) && defined(__aarch64__)
-  // TODO - we may need to switch to using pthread_jit_write_protect_np
-  // there may also be issues if multiple threasd are involved
-  // but this seems to work so keep it simple until something proves otherwise.
-  mprotect(code_buffer, code_buffer_capacity, PROT_EXEC | PROT_READ);
-  auto ret = ((u64(*)())code_buffer)();
-  mprotect(code_buffer, code_buffer_capacity, PROT_WRITE | PROT_READ);
+  jit_memory::make_executable(code_buffer, code_buffer_capacity);
+  auto ret = ((u64 (*)())code_buffer)();
+  jit_memory::make_writable(code_buffer, code_buffer_capacity);
   return ret;
-#else
-  return ((u64(*)())code_buffer)();
-#endif
-  // clang-format on
 }
 
 /*!
@@ -198,53 +179,24 @@ u64 CodeTester::execute() {
  * arguments will appear in (will handle windows/linux differences)
  */
 u64 CodeTester::execute(u64 in0, u64 in1, u64 in2, u64 in3) {
-#if defined(__aarch64__)
-  // ARM requires flushing after writing new instructions (and after the
-  // executable page is reused by a later allocation, the icache may hold
-  // stale lines from a previous buffer at the same address).
-  __builtin___clear_cache((char*)code_buffer, (char*)code_buffer + code_buffer_size);
-#endif
-  // clang-format off
-#if defined(__APPLE__) && defined(__aarch64__)
-  mprotect(code_buffer, code_buffer_capacity, PROT_EXEC | PROT_READ);
-  auto ret = ((u64(*)(u64, u64, u64, u64))code_buffer)(in0, in1, in2, in3);
-  mprotect(code_buffer, code_buffer_capacity, PROT_WRITE | PROT_READ);
+  jit_memory::make_executable(code_buffer, code_buffer_capacity);
+  auto ret = ((u64 (*)(u64, u64, u64, u64))code_buffer)(in0, in1, in2, in3);
+  jit_memory::make_writable(code_buffer, code_buffer_capacity);
   return ret;
-#else
-  return ((u64(*)(u64, u64, u64, u64))code_buffer)(in0, in1, in2, in3);
-#endif
-  // clang-format on
 }
 
 /*!
  * Allocate a code buffer of the given size.
  */
 void CodeTester::init_code_buffer(int capacity) {
-// TODO Apple Silicon - You cannot make a page be RWX,
-// or more specifically it can't be both writable and executable at the same time
-//
-// https://github.com/zherczeg/sljit/issues/99
-//
-// The solution to this is to flip-flop between permissions, or perhaps have two threads
-// one that has writing permission, and another with executable permission
-#if defined(__APPLE__) && defined(__aarch64__)
-  code_buffer = (u8*)mmap(nullptr, capacity, PROT_WRITE | PROT_READ,
-                          MAP_ANONYMOUS | MAP_PRIVATE | MAP_JIT, 0, 0);
-#else
-  code_buffer = (u8*)mmap(nullptr, capacity, PROT_EXEC | PROT_READ | PROT_WRITE,
-                          MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
-#endif
-  if (code_buffer == (u8*)(-1)) {
-    ASSERT_MSG(false, "[CodeTester] Failed to map memory!");
-  }
+  code_region = std::make_unique<jit_memory::JitRegion>(jit_memory::JitRegion::allocate(capacity));
+  code_buffer = static_cast<u8*>(code_region->data());
 
   code_buffer_capacity = capacity;
   code_buffer_size = 0;
 }
 
 CodeTester::~CodeTester() {
-  if (code_buffer_capacity) {
-    munmap(code_buffer, code_buffer_capacity);
-  }
+  code_region.reset();
 }
 }  // namespace emitter

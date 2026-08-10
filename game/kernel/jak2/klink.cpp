@@ -1,6 +1,7 @@
 #include "klink.h"
 
 #include "common/goal_constants.h"
+#include "common/jit_memory.h"
 #include "common/log/log.h"
 #include "common/symbols.h"
 
@@ -532,7 +533,19 @@ uint32_t link_control::jak2_work_v2() {
  * Complete linking. This will execute the top-level code for v3 object files, if requested.
  */
 void link_control::jak2_finish(bool jump_from_c_to_goal) {
-  CacheFlush(m_code_start.c(), m_code_size);
+  ObjectFileHeader* ofh = m_link_block_ptr.cast<ObjectFileHeader>().c();
+  if (ofh->object_file_version == 3) {
+    // Version 3 moves each code segment into the GOAL heap, so m_code_start/m_code_size do not
+    // describe the final executable ranges.
+    for (u32 segment = 0; segment < ofh->segment_count; ++segment) {
+      const auto& code = ofh->code_infos[segment];
+      if (code.offset && code.size) {
+        jit_memory::make_executable(Ptr<u8>(code.offset).c(), code.size);
+      }
+    }
+  } else {
+    CacheFlush(m_code_start.c(), m_code_size);
+  }
   auto old_debug_segment = DebugSegment;
   if (m_keep_debug) {
     // note - this probably doesn't work because DebugSegment isn't *debug-segment*.
@@ -543,7 +556,6 @@ void link_control::jak2_finish(bool jump_from_c_to_goal) {
   }
   *EnableMethodSet = *EnableMethodSet + m_keep_debug;
 
-  ObjectFileHeader* ofh = m_link_block_ptr.cast<ObjectFileHeader>().c();
   lg::debug("link finish: {}", m_object_name);
   if (ofh->object_file_version == 3) {
     // todo check function type of entry

@@ -9,11 +9,12 @@
 #include "common/common_types.h"
 #include "common/global_profiler/GlobalProfiler.h"
 #include "common/goal_constants.h"
+#include "common/jit_memory.h"
 #include "common/log/log.h"
 #include "common/symbols.h"
 
-#include "game/kernel/common/fileio.h"
 #include "game/kernel/common/arm64_trampoline.h"
+#include "game/kernel/common/fileio.h"
 #include "game/kernel/common/kdsnetm.h"
 #include "game/kernel/common/klink.h"
 #include "game/kernel/common/kmemcard.h"
@@ -305,13 +306,20 @@ void _stack_call_arm64();
  * But calling this function is fast. It used to be really fast but wrong.
  */
 Ptr<Function> make_function_from_c_systemv(void* func, bool arg3_is_pp) {
+#if defined(__aarch64__)
+  if (g_ee_main_mem && kglobalheap.offset) {
+    jit_memory::make_writable(kglobalheap->current.c(), 0x40);
+  }
+#endif
   auto mem = Ptr<u8>(alloc_heap_object(s7.offset + FIX_SYM_GLOBAL_HEAP,
                                        u32_in_fixed_sym(FIX_SYM_FUNCTION_TYPE), 0x40, UNKNOWN_PP));
 #if defined(__aarch64__)
+  jit_memory::JitWriteScope scope(mem.c(), 0x40);
   const auto code_size = arm64_trampoline::emit_c_function(
-      mem.c(), func,
-      reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(_arg_call_arm64)), arg3_is_pp);
-  arm64_trampoline::flush(mem.c(), code_size);
+      mem.c(), func, reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(_arg_call_arm64)),
+      arg3_is_pp);
+  scope.flush_instruction_cache();
+  (void)code_size;
 #else
   auto f = (uint64_t)func;
   auto target_function = (u8*)&f;
@@ -418,13 +426,20 @@ Ptr<Function> make_function_from_c_win32(void* func, bool arg3_is_pp) {
 }
 
 Ptr<Function> make_stack_arg_function_from_c_systemv(void* func) {
+#if defined(__aarch64__)
+  if (g_ee_main_mem && kglobalheap.offset) {
+    jit_memory::make_writable(kglobalheap->current.c(), 0x40);
+  }
+#endif
   // allocate a function object on the global heap
   auto mem = Ptr<u8>(alloc_heap_object(s7.offset + FIX_SYM_GLOBAL_HEAP,
                                        u32_in_fixed_sym(FIX_SYM_FUNCTION_TYPE), 0x40, UNKNOWN_PP));
 #if defined(__aarch64__)
+  jit_memory::JitWriteScope scope(mem.c(), 0x40);
   const auto code_size = arm64_trampoline::emit_stack_function(
       mem.c(), func, reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(_stack_call_arm64)));
-  arm64_trampoline::flush(mem.c(), code_size);
+  scope.flush_instruction_cache();
+  (void)code_size;
 #else
   auto f = (uint64_t)func;
   auto target_function = (u8*)&f;
@@ -532,12 +547,19 @@ Ptr<Function> make_stack_arg_function_from_c(void* func) {
  * Create a GOAL function which does nothing and immediately returns.
  */
 Ptr<Function> make_nothing_func() {
+#if defined(__aarch64__)
+  if (g_ee_main_mem && kglobalheap.offset) {
+    jit_memory::make_writable(kglobalheap->current.c(), 0x40);
+  }
+#endif
   auto mem = Ptr<u8>(alloc_heap_object(s7.offset + FIX_SYM_GLOBAL_HEAP,
                                        u32_in_fixed_sym(FIX_SYM_FUNCTION_TYPE), 0x14, UNKNOWN_PP));
 
 #if defined(__aarch64__)
+  jit_memory::JitWriteScope scope(mem.c(), 0x14);
   const auto code_size = arm64_trampoline::emit_nothing(mem.c());
-  arm64_trampoline::flush(mem.c(), code_size);
+  scope.flush_instruction_cache();
+  (void)code_size;
 #else
   // a single x86-64 ret.
   mem.c()[0] = 0xc3;
@@ -550,11 +572,18 @@ Ptr<Function> make_nothing_func() {
  * Create a GOAL function which returns 0.
  */
 Ptr<Function> make_zero_func() {
+#if defined(__aarch64__)
+  if (g_ee_main_mem && kglobalheap.offset) {
+    jit_memory::make_writable(kglobalheap->current.c(), 0x40);
+  }
+#endif
   auto mem = Ptr<u8>(alloc_heap_object(s7.offset + FIX_SYM_GLOBAL_HEAP,
                                        u32_in_fixed_sym(FIX_SYM_FUNCTION_TYPE), 0x14, UNKNOWN_PP));
 #if defined(__aarch64__)
+  jit_memory::JitWriteScope scope(mem.c(), 0x14);
   const auto code_size = arm64_trampoline::emit_zero(mem.c());
-  arm64_trampoline::flush(mem.c(), code_size);
+  scope.flush_instruction_cache();
+  (void)code_size;
 #else
   // xor eax, eax
   mem.c()[0] = 0x31;

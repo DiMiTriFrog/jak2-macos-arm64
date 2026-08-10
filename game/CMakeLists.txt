@@ -366,6 +366,11 @@ endif()
 
 add_executable(gk main.cpp)
 target_link_libraries(gk runtime)
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+    set_target_properties(gk PROPERTIES
+        XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/macos/jak-jit.entitlements"
+    )
+endif()
 if(WIN32)
     set_target_properties(gk PROPERTIES VS_DPI_AWARE "PerMonitor")
 endif()

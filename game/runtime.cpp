@@ -4,14 +4,9 @@
  */
 
 #include "common/common_types.h"
-#ifdef OS_POSIX
-#include <unistd.h>
-
-#include <sys/mman.h>
-#elif _WIN32
+#ifdef _WIN32
 #include <io.h>
 
-#include "third-party/mman/mman.h"
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -19,6 +14,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <memory>
 #include <thread>
 
 #include "runtime.h"
@@ -26,6 +22,7 @@
 #include "common/cross_os_debug/xdbg.h"
 #include "common/global_profiler/GlobalProfiler.h"
 #include "common/goal_constants.h"
+#include "common/jit_memory.h"
 #include "common/log/log.h"
 #include "common/versions/versions.h"
 
@@ -91,6 +88,7 @@ std::thread::id g_main_thread_id = std::thread::id();
 GameVersion g_game_version = GameVersion::Jak1;
 BackgroundWorker g_background_worker;
 int g_server_port = DECI2_PORT;
+std::unique_ptr<jit_memory::JitRegion> g_ee_main_region;
 
 namespace {
 
@@ -148,31 +146,16 @@ void deci2_runner(SystemThreadInterface& iface) {
  */
 void ee_runner(SystemThreadInterface& iface) {
   prof().root_event();
-  // Allocate Main RAM. Must have execute enabled.
-  // TODO Apple Silicon - You cannot make a page be RWX,
-  // or more specifically it can't be both writable and executable at the same time
-  //
-  // https://github.com/zherczeg/sljit/issues/99
-  //
-  // The solution to this is to flip-flop between permissions, or perhaps have two threads
-  // one that has writing permission, and another with executable permission
-  if (EE_MEM_LOW_MAP) {
-    g_ee_main_mem =
-        (u8*)mmap((void*)0x10000000, EE_MAIN_MEM_SIZE, PROT_EXEC | PROT_READ | PROT_WRITE,
-#ifdef __APPLE__
-                  // has no map_populate
-                  MAP_ANONYMOUS | MAP_32BIT | MAP_PRIVATE, 0, 0);
-#else
-                  MAP_ANONYMOUS | MAP_32BIT | MAP_PRIVATE | MAP_POPULATE, 0, 0);
-#endif
-  } else {
-    g_ee_main_mem =
-        (u8*)mmap((void*)EE_MAIN_MEM_MAP, EE_MAIN_MEM_SIZE, PROT_EXEC | PROT_READ | PROT_WRITE,
-                  MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
-  }
-
-  if (g_ee_main_mem == (u8*)(-1)) {
-    lg::debug("Failed to initialize main memory! {}", strerror(errno));
+  // Allocate main RAM through the central JIT manager. On Apple ARM64 this is MAP_JIT and starts
+  // writable only; individual generated-code ranges transition to RX after their final patch.
+  try {
+    void* hint = EE_MEM_LOW_MAP ? reinterpret_cast<void*>(0x10000000)
+                                : reinterpret_cast<void*>(EE_MAIN_MEM_MAP);
+    g_ee_main_region = std::make_unique<jit_memory::JitRegion>(
+        jit_memory::JitRegion::allocate(EE_MAIN_MEM_SIZE, hint));
+    g_ee_main_mem = static_cast<u8*>(g_ee_main_region->data());
+  } catch (const std::system_error& error) {
+    lg::error("Failed to initialize main memory: {}", error.what());
     iface.initialization_complete();
     return;
   }
@@ -190,7 +173,7 @@ void ee_runner(SystemThreadInterface& iface) {
   // prevent access to the first 512 kB of memory.
   // On the PS2 this is the kernel and can't be accessed either.
   // this may not work well on systems with a page size > 1 MB.
-  mprotect((void*)g_ee_main_mem, EE_MAIN_MEM_LOW_PROTECT, PROT_NONE);
+  jit_memory::make_no_access((void*)g_ee_main_mem, EE_MAIN_MEM_LOW_PROTECT);
   fileio_init_globals();
   jak1::kboot_init_globals();
   jak2::kboot_init_globals();
@@ -480,7 +463,8 @@ RuntimeExitStatus exec_runtime(GameLaunchOptions game_options, int argc, const c
     Gfx::Exit();
   }
   lg::info("GOAL Runtime Shutdown (code {})", fmt::underlying(MasterExit));
-  munmap(g_ee_main_mem, EE_MAIN_MEM_SIZE);
+  g_ee_main_region.reset();
+  g_ee_main_mem = nullptr;
   Discord_Shutdown();
   return MasterExit;
 }

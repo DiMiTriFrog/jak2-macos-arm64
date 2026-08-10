@@ -1,5 +1,7 @@
 #include "mips2c_table.h"
 
+#include "common/goal_constants.h"
+#include "common/jit_memory.h"
 #include "common/log/log.h"
 #include "common/symbols.h"
 
@@ -664,6 +666,14 @@ PerGameVersion<std::unordered_map<std::string, std::vector<void (*)()>>> gMips2C
     {}};
 
 void LinkedFunctionTable::reg(const std::string& name, u64 (*exec)(void*), u32 stack_size) {
+#if defined(__aarch64__)
+  // Function objects are allocated from the shared GOAL heap. Make the next allocation writable
+  // before the allocator writes its tag and payload; the generated function page is returned to RX
+  // below. Existing function pages remain executable.
+  if (g_ee_main_mem && kglobalheap.offset) {
+    jit_memory::make_writable(kglobalheap->current.c(), 0x40);
+  }
+#endif
   const auto& it = m_executes.insert({name, {exec, Ptr<u8>()}});
   if (!it.second) {
     lg::error("MIPS2C Function {} is registered multiple times, ignoring later registrations.",
@@ -695,10 +705,12 @@ void LinkedFunctionTable::reg(const std::string& name, u64 (*exec)(void*), u32 s
   it.first->second.goal_trampoline = jump_to_asm;
 
 #if defined(__aarch64__)
+  jit_memory::JitWriteScope scope(jump_to_asm.c(), 0x40);
   const auto code_size = arm64_trampoline::emit_mips2c(
       jump_to_asm.c(), stack_size, reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(exec)),
       reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(_mips2c_call_arm64)));
-  arm64_trampoline::flush(jump_to_asm.c(), code_size);
+  scope.flush_instruction_cache();
+  (void)code_size;
 #else
   u8* ptr = jump_to_asm.c();
 

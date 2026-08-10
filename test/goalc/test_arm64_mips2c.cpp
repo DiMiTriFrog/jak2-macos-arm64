@@ -1,9 +1,10 @@
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
-#include <unistd.h>
 
 #include "common/goal_constants.h"
+#include "common/jit_memory.h"
 #include "common/symbols.h"
 
 #include "game/kernel/common/arm64_trampoline.h"
@@ -13,7 +14,6 @@
 #include "game/mips2c/mips2c_table.h"
 #include "game/runtime.h"
 #include "gtest/gtest.h"
-#include <sys/mman.h>
 
 #if defined(__aarch64__)
 
@@ -73,32 +73,22 @@ extern "C" __attribute__((naked)) u64 invoke_mips2c_stub(void*, u64, u64, u64, u
 
 class ExecutablePage {
  public:
-  ExecutablePage() {
-    page_size_ = static_cast<size_t>(sysconf(_SC_PAGESIZE));
-    memory_ = static_cast<u8*>(mmap(nullptr, page_size_, PROT_READ | PROT_WRITE,
-                                    MAP_ANONYMOUS | MAP_PRIVATE | MAP_JIT, -1, 0));
-    if (memory_ == MAP_FAILED) {
-      memory_ = nullptr;
-    }
-  }
+  ExecutablePage() : region_(jit_memory::JitRegion::allocate(4096)) {}
 
-  ~ExecutablePage() {
-    if (memory_ != nullptr) {
-      EXPECT_EQ(munmap(memory_, page_size_), 0);
-    }
-  }
+  bool valid() const { return region_.data() != nullptr; }
+  u8* data() { return static_cast<u8*>(region_.data()); }
 
-  bool valid() const { return memory_ != nullptr; }
-  u8* data() { return memory_; }
+  jit_memory::JitWriteScope write_scope() { return region_.write_scope(); }
 
   void make_executable(size_t code_size) {
-    arm64_trampoline::flush(memory_, code_size);
-    ASSERT_EQ(mprotect(memory_, page_size_, PROT_READ | PROT_EXEC), 0);
+    region_.flush_instruction_cache(data(), code_size);
+    region_.make_executable();
   }
 
+  void make_writable() { region_.make_writable(); }
+
  private:
-  u8* memory_ = nullptr;
-  size_t page_size_ = 0;
+  jit_memory::JitRegion region_;
 };
 
 }  // namespace
@@ -106,8 +96,10 @@ class ExecutablePage {
 TEST(ARM64Mips2C, GeneratedStubExecutesContextAndStackContract) {
   ExecutablePage page;
   ASSERT_TRUE(page.valid());
+  auto scope = page.write_scope();
   const auto size = arm64_trampoline::emit_mips2c(
       page.data(), 7, function_address(&mips2c_context_sum), function_address(_mips2c_call_arm64));
+  scope.finish();
   page.make_executable(size);
 
   EXPECT_EQ(invoke_mips2c_stub(page.data(), 2, 3, 5, 7),
@@ -118,6 +110,7 @@ TEST(ARM64Mips2C, GeneratedStubSupportsRepeatedCallsAndStackBoundaries) {
   ExecutablePage page;
   ASSERT_TRUE(page.valid());
   for (u64 stack_size : {u64(0), u64(1), u64(7), u64(8), u64(9), u64(16)}) {
+    auto scope = page.write_scope();
     const auto size = arm64_trampoline::emit_mips2c(page.data(), stack_size,
                                                     function_address(&mips2c_context_sum),
                                                     function_address(_mips2c_call_arm64));
@@ -125,16 +118,14 @@ TEST(ARM64Mips2C, GeneratedStubSupportsRepeatedCallsAndStackBoundaries) {
     std::memcpy(&observed_target, page.data() + 40, sizeof(observed_target));
     EXPECT_EQ(observed_target, reinterpret_cast<uintptr_t>(&mips2c_context_sum))
         << "stack_size=" << stack_size;
+    scope.finish();
     page.make_executable(size);
     EXPECT_EQ(invoke_mips2c_stub(page.data(), 1, 2, 3, 4),
               1 + 2 * 2 + 3 * 3 + 4 * 4 + 0x100000000ull)
         << "stack_size=" << stack_size;
-    std::memcpy(&observed_target, page.data() + 40, sizeof(observed_target));
     // The next iteration needs to rewrite the same page.
     if (stack_size != 16) {
-      ASSERT_EQ(
-          mprotect(page.data(), static_cast<size_t>(sysconf(_SC_PAGESIZE)), PROT_READ | PROT_WRITE),
-          0);
+      page.make_writable();
     }
   }
 }
@@ -143,10 +134,9 @@ TEST(ARM64Mips2CTable, RegistersSyntheticAndRealJak2Functions) {
   constexpr size_t kSyntheticFunctionCount = 128;
   constexpr u32 kFakeFunctionType = 0x300000;
   constexpr u32 kFakeS7 = 0x200000;
-  const auto page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
-  auto* memory = static_cast<u8*>(mmap(nullptr, EE_MAIN_MEM_SIZE, PROT_READ | PROT_WRITE,
-                                       MAP_ANONYMOUS | MAP_PRIVATE | MAP_JIT, -1, 0));
-  ASSERT_NE(memory, MAP_FAILED);
+  auto region = jit_memory::JitRegion::allocate(EE_MAIN_MEM_SIZE);
+  auto* memory = static_cast<u8*>(region.data());
+  ASSERT_NE(memory, nullptr);
 
   auto* old_ee_memory = g_ee_main_mem;
   const auto old_game_version = g_game_version;
@@ -179,10 +169,11 @@ TEST(ARM64Mips2CTable, RegistersSyntheticAndRealJak2Functions) {
   EXPECT_NE(first_offset, last_offset);
   EXPECT_NE(first_offset, real_offset);
 
+  const auto page_size = static_cast<u32>(jit_memory::page_size());
   const auto heap_begin = HEAP_START & static_cast<u32>(-static_cast<s32>(page_size));
-  const auto heap_end = (kglobalheap->current.offset + static_cast<u32>(page_size) - 1) &
-                        ~static_cast<u32>(page_size - 1);
-  ASSERT_EQ(mprotect(memory + heap_begin, heap_end - heap_begin, PROT_READ | PROT_EXEC), 0);
+  const auto heap_end = (kglobalheap->current.offset + page_size - 1) & ~(page_size - 1);
+  jit_memory::flush_instruction_cache(memory + heap_begin, heap_end - heap_begin);
+  jit_memory::make_executable(memory + heap_begin, heap_end - heap_begin);
 
   auto first_function = memory + first_offset;
   EXPECT_EQ(invoke_mips2c_stub(first_function, 2, 3, 5, 7),
@@ -190,7 +181,6 @@ TEST(ARM64Mips2CTable, RegistersSyntheticAndRealJak2Functions) {
   EXPECT_DEATH(::Mips2C::gLinkedFunctionTable.get("arm64-missing"), "");
 
   ::Mips2C::gLinkedFunctionTable = {};
-  EXPECT_EQ(munmap(memory, EE_MAIN_MEM_SIZE), 0);
   g_ee_main_mem = old_ee_memory;
   g_game_version = old_game_version;
 }

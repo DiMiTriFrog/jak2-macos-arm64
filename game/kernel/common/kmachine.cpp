@@ -3,6 +3,7 @@
 #include <random>
 
 #include "common/global_profiler/GlobalProfiler.h"
+#include "common/jit_memory.h"
 #include "common/log/log.h"
 #include "common/symbols.h"
 #include "common/util/FileUtil.h"
@@ -128,10 +129,9 @@ void InitVideo() {
  * Flush caches.  Does all the memory, regardless of what you specify
  */
 void CacheFlush(void* mem, int size) {
-  (void)mem;
-  (void)size;
-  // FlushCache(0);
-  // FlushCache(2);
+  if (mem && size > 0) {
+    jit_memory::make_executable(mem, static_cast<size_t>(size));
+  }
 }
 
 /*!

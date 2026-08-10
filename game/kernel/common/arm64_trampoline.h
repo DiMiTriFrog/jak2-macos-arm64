@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "common/common_types.h"
+#include "common/jit_memory.h"
 #include "common/util/Assert.h"
 
 // Small, header-only AArch64 encoder for runtime trampolines.  The game target does not link
@@ -40,12 +41,7 @@ inline void write_literal(u8* dst, size_t offset, u64 value) {
 }
 
 inline void flush(void* start, size_t size) {
-#if defined(__aarch64__)
-  __builtin___clear_cache(static_cast<char*>(start), static_cast<char*>(start) + size);
-#else
-  (void)start;
-  (void)size;
-#endif
+  jit_memory::flush_instruction_cache(start, size);
 }
 
 // Layout without the optional pp move:
