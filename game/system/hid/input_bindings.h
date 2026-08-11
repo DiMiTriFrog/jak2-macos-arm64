@@ -179,9 +179,8 @@ struct PadData {
   }
 
   void clear() {
-    for (auto& x : button_data) {
-      x = 0;
-    }
+    button_data.fill(false);
+    pressure_data.fill(0);
     clear_analogs();
   }
 

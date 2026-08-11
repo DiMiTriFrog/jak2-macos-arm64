@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <unordered_set>
 
 #include "input_manager.h"
 #include "sdl_util.h"
@@ -16,6 +17,15 @@
 
 #include "third-party/SDL/include/SDL3/SDL_hints.h"
 #include "third-party/imgui/imgui.h"
+
+namespace {
+struct SDLFreeDeleter {
+  template <typename T>
+  void operator()(T* ptr) const noexcept {
+    SDL_free(ptr);
+  }
+};
+}  // namespace
 
 InputManager::InputManager(SDL_Window* window)
     : m_window(window),
@@ -84,57 +94,124 @@ void InputManager::refresh_device_list() {
   prof().instant_event("ROOT");
   {
     auto p = scoped_prof("input_manager::refresh_device_list");
-    m_available_controllers.clear();
-    m_controller_port_mapping.clear();
-    // Enumerate devices
-    // TODO - if this was done on a separate thread, there would be no hitch in the game thread
-    // but of course, that presents other synchronization challenges.
+    std::unordered_map<SDL_JoystickID, std::shared_ptr<GameController>> existing_controllers;
+    for (const auto& controller : m_available_controllers) {
+      if (controller && controller->is_loaded()) {
+        existing_controllers.emplace(controller->get_instance_id(), controller);
+      }
+    }
+
+    std::vector<std::shared_ptr<GameController>> refreshed_controllers;
+    std::unordered_set<SDL_JoystickID> retained_ids;
+
     int num_joysticks = 0;
-    auto joysticks = SDL_GetJoysticks(&num_joysticks);
-    if (num_joysticks > 0) {
-      for (int i = 0; i < num_joysticks; i++) {
-        if (!SDL_IsGamepad(joysticks[i])) {
-          lg::error("Controller with device id {} is not avaiable via the GameController API", i);
-          continue;
+    std::unique_ptr<SDL_JoystickID, SDLFreeDeleter> joysticks{
+        SDL_GetJoysticks(&num_joysticks)};
+    if (!joysticks && num_joysticks > 0) {
+      sdl_util::log_error("Unable to enumerate SDL joysticks");
+    }
+
+    for (int i = 0; joysticks && i < num_joysticks; i++) {
+      const auto instance_id = joysticks.get()[i];
+      if (!SDL_IsGamepad(instance_id)) {
+        lg::debug("SDL joystick {} is not available through the Gamepad API", instance_id);
+        continue;
+      }
+
+      std::shared_ptr<GameController> controller;
+      if (const auto existing = existing_controllers.find(instance_id);
+          existing != existing_controllers.end()) {
+        controller = existing->second;
+      } else {
+        controller = std::make_shared<GameController>(instance_id, m_settings);
+      }
+      if (!controller->is_loaded()) {
+        lg::error("Unable to load GameController with instance id {}, skipping", instance_id);
+        continue;
+      }
+      refreshed_controllers.push_back(std::move(controller));
+      retained_ids.insert(instance_id);
+    }
+
+    // Clear aggregate state before removing devices so no held input survives
+    // a disconnect. Reused handles stay open; only disappeared devices close.
+    clear_inputs();
+    for (const auto& old_controller : m_available_controllers) {
+      if (old_controller &&
+          !retained_ids.contains(old_controller->get_instance_id())) {
+        old_controller->close_device();
+      }
+    }
+
+    m_available_controllers = std::move(refreshed_controllers);
+    m_controller_port_mapping.clear();
+
+    // Keep SDL instance IDs, vector indices and logical PS2 ports separate.
+    std::unordered_set<int> used_ports;
+    auto first_free_port = [&used_ports]() {
+      int port = 0;
+      while (used_ports.contains(port)) {
+        port++;
+      }
+      return port;
+    };
+    for (size_t controller_index = 0; controller_index < m_available_controllers.size();
+         controller_index++) {
+      const auto& controller = m_available_controllers.at(controller_index);
+      const auto saved = m_settings->controller_port_mapping.find(controller->get_guid());
+      int port = -1;
+      if (saved != m_settings->controller_port_mapping.end() && saved->second >= 0 &&
+          !used_ports.contains(saved->second)) {
+        port = saved->second;
+      } else {
+        if (saved != m_settings->controller_port_mapping.end() && saved->second >= 0) {
+          lg::warn("Controller port {} is already in use; assigning {} to the next free port",
+                   saved->second, controller->get_guid());
         }
-        auto controller = std::make_shared<GameController>(joysticks[i], m_settings);
-        if (!controller->is_loaded()) {
-          lg::error("Unable to successfully connect to GameController with id {}, skipping", i);
-          continue;
-        }
-        m_available_controllers.push_back(controller);
-        // By default, controller port mapping is on a first-come-first-served basis
-        //
-        // However, we will use previously saved controller port mappings to take precedence
-        // For example, if you previous set your PS5 controller to be port 0, then even
-        // if another controller is detected first, the PS5 controller should be assigned as
-        // expected.
-        if (m_settings->controller_port_mapping.find(controller->get_guid()) !=
-            m_settings->controller_port_mapping.end()) {
-          // Though it's possible for a user to assign multiple controllers to the same port, so the
-          // last one wins
-          m_controller_port_mapping[m_settings->controller_port_mapping.at(
-              controller->get_guid())] = i;
-        } else {
-          m_controller_port_mapping[m_available_controllers.size() - 1] = i;
-          m_settings->controller_port_mapping[controller->get_guid()] =
-              m_available_controllers.size() - 1;
-        }
-        // Allocate a PadData if this is a new port
-        if (m_data.find(i) == m_data.end()) {
-          m_data[i] = std::make_shared<PadData>();
+        port = first_free_port();
+      }
+      used_ports.insert(port);
+      // The value is the filtered vector index, never the SDL enumeration index.
+      m_controller_port_mapping[port] = static_cast<int>(controller_index);
+      m_settings->controller_port_mapping[controller->get_guid()] = port;
+      m_data.try_emplace(port, std::make_shared<PadData>());
+    }
+
+    // Preserve the user's last-selected controller as logical port 0 without
+    // creating duplicate port mappings.
+    if (!m_settings->last_selected_controller_guid.empty()) {
+      int selected_index = -1;
+      int selected_port = -1;
+      for (const auto& [port, controller_index] : m_controller_port_mapping) {
+        if (controller_index >= 0 &&
+            static_cast<size_t>(controller_index) < m_available_controllers.size() &&
+            m_available_controllers.at(controller_index)->get_guid() ==
+                m_settings->last_selected_controller_guid) {
+          selected_index = controller_index;
+          selected_port = port;
+          break;
         }
       }
-      // If the controller that was last selected to be port 0 is around, prioritize it
-      if (!m_settings->last_selected_controller_guid.empty()) {
-        for (size_t i = 0; i < m_available_controllers.size(); i++) {
-          const auto& controller_guid = m_available_controllers.at(i)->get_guid();
-          if (controller_guid == m_settings->last_selected_controller_guid) {
-            m_controller_port_mapping[0] = i;
-            m_settings->controller_port_mapping[controller_guid] = 0;
-            break;
+      if (selected_index >= 0 && selected_port != 0) {
+        if (const auto port_zero = m_controller_port_mapping.find(0);
+            port_zero != m_controller_port_mapping.end()) {
+          const auto displaced_index = port_zero->second;
+          int replacement_port = 1;
+          while (used_ports.contains(replacement_port)) {
+            replacement_port++;
           }
+          m_controller_port_mapping[replacement_port] = displaced_index;
+          if (displaced_index >= 0 &&
+              static_cast<size_t>(displaced_index) < m_available_controllers.size()) {
+            m_settings->controller_port_mapping[
+                m_available_controllers.at(displaced_index)->get_guid()] = replacement_port;
+          }
+          m_data.try_emplace(replacement_port, std::make_shared<PadData>());
+          m_controller_port_mapping.erase(port_zero);
         }
+        m_controller_port_mapping.erase(selected_port);
+        m_controller_port_mapping[0] = selected_index;
+        m_settings->controller_port_mapping[m_settings->last_selected_controller_guid] = 0;
       }
     }
     if (m_available_controllers.empty()) {
@@ -178,12 +255,13 @@ void InputManager::hide_cursor(const bool hide_cursor) {
 }
 
 void InputManager::process_sdl_event(const SDL_Event& event) {
-  // TODO - perhaps should handle `SDL_CONTROLLERDEVICEREMAPPED`?
-  // Detect controller connections and disconnects
-  if (sdl_util::is_any_event_type(event.type,
-                                  {SDL_EVENT_GAMEPAD_ADDED, SDL_EVENT_GAMEPAD_REMOVED})) {
-    lg::info("Controller added or removed. refreshing controller device list");
-    refresh_device_list();
+  const bool controller_topology_event = sdl_util::is_any_event_type(
+      event.type, {SDL_EVENT_GAMEPAD_ADDED, SDL_EVENT_GAMEPAD_REMOVED,
+                   SDL_EVENT_GAMEPAD_REMAPPED});
+  if (controller_topology_event) {
+    // SDL can emit a burst of topology events. Refresh once at the end of the
+    // frame and do not dispatch an event to a handle that is about to close.
+    m_controller_refresh_pending = true;
   }
 
   if (m_data.find(m_keyboard_and_mouse_port) != m_data.end()) {
@@ -195,10 +273,14 @@ void InputManager::process_sdl_event(const SDL_Event& event) {
 
   // Send event to active controller device
   // This goes last so it takes precedence
-  for (const auto& [port, controller_idx] : m_controller_port_mapping) {
-    if (m_data.find(port) != m_data.end() && (int)m_available_controllers.size() > controller_idx) {
-      m_available_controllers.at(controller_idx)
-          ->process_event(event, m_command_binds, m_data.at(port), m_waiting_for_bind);
+  if (!controller_topology_event) {
+    for (const auto& mapping : m_controller_port_mapping) {
+      const auto port = mapping.first;
+      if (m_data.find(port) != m_data.end()) {
+        if (auto* controller = controller_for_port(port)) {
+          controller->process_event(event, m_command_binds, m_data.at(port), m_waiting_for_bind);
+        }
+      }
     }
   }
 
@@ -254,6 +336,10 @@ void InputManager::clear_mouse_actions() {
 }
 
 void InputManager::finish_polling() {
+  if (m_controller_refresh_pending) {
+    m_controller_refresh_pending = false;
+    refresh_device_list();
+  }
   m_skip_polling_for_n_frames--;
   if (m_skip_polling_for_n_frames < 0) {
     m_skip_polling_for_n_frames = 0;
@@ -349,8 +435,28 @@ std::optional<std::shared_ptr<PadData>> InputManager::get_current_data(const int
   return m_data.at(port);
 }
 
+GameController* InputManager::controller_for_port(const int port) noexcept {
+  const auto mapping = m_controller_port_mapping.find(port);
+  if (mapping == m_controller_port_mapping.end() || mapping->second < 0 ||
+      static_cast<size_t>(mapping->second) >= m_available_controllers.size()) {
+    return nullptr;
+  }
+  const auto& controller = m_available_controllers.at(mapping->second);
+  return controller ? controller.get() : nullptr;
+}
+
+const GameController* InputManager::controller_for_port(const int port) const noexcept {
+  const auto mapping = m_controller_port_mapping.find(port);
+  if (mapping == m_controller_port_mapping.end() || mapping->second < 0 ||
+      static_cast<size_t>(mapping->second) >= m_available_controllers.size()) {
+    return nullptr;
+  }
+  const auto& controller = m_available_controllers.at(mapping->second);
+  return controller ? controller.get() : nullptr;
+}
+
 std::string InputManager::get_controller_name(const int controller_id) {
-  if ((size_t)controller_id >= m_available_controllers.size()) {
+  if (controller_id < 0 || static_cast<size_t>(controller_id) >= m_available_controllers.size()) {
     return "";
   }
   return m_available_controllers.at(controller_id)->get_name();
@@ -364,15 +470,12 @@ std::string InputManager::get_current_bind(const int port,
   std::vector<InputBindingInfo> binding_info;
   switch (device_type) {
     case InputDeviceType::CONTROLLER:
-      if (m_controller_port_mapping.find(port) != m_controller_port_mapping.end() &&
-          m_controller_port_mapping.at(port) < (int)m_available_controllers.size() &&
-          m_settings->controller_binds.find(
-              m_available_controllers.at(m_controller_port_mapping.at(port))->get_guid()) !=
-              m_settings->controller_binds.end()) {
+      if (const auto* controller = controller_for_port(port);
+          controller && m_settings->controller_binds.find(controller->get_guid()) !=
+                             m_settings->controller_binds.end()) {
         binding_info =
-            m_settings->controller_binds
-                .at(m_available_controllers.at(m_controller_port_mapping.at(port))->get_guid())
-                .lookup_button_binds((PadData::ButtonIndex)input_idx);
+            m_settings->controller_binds.at(controller->get_guid()).lookup_button_binds(
+                (PadData::ButtonIndex)input_idx);
       }
       break;
     case InputDeviceType::KEYBOARD:
@@ -395,14 +498,16 @@ std::string InputManager::get_current_bind(const int port,
 }
 
 int InputManager::get_controller_index(const int port) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
+  if (!controller_for_port(port)) {
     return 0;
   }
   return m_controller_port_mapping.at(port);
 }
 
 void InputManager::set_controller_for_port(const int controller_id, const int port) {
-  if (controller_id < (int)m_available_controllers.size()) {
+  if (port >= 0 && controller_id >= 0 &&
+      static_cast<size_t>(controller_id) < m_available_controllers.size() &&
+      m_available_controllers.at(controller_id)) {
     // Reset inputs as this device won't be able to be read from again!
     clear_inputs();
     auto& controller = m_available_controllers.at(controller_id);
@@ -417,78 +522,51 @@ void InputManager::set_controller_for_port(const int controller_id, const int po
 }
 
 bool InputManager::controller_has_led(const int port) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
-    return false;
-  }
-  const auto id = m_controller_port_mapping.at(port);
-  if (id >= (int)m_available_controllers.size()) {
-    return false;
-  }
-  return m_available_controllers.at(id)->has_led();
+  const auto* controller = controller_for_port(port);
+  return controller && controller->has_led();
 }
 
 bool InputManager::controller_has_rumble(const int port) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
-    return false;
-  }
-  const auto id = m_controller_port_mapping.at(port);
-  if (id >= (int)m_available_controllers.size()) {
-    return false;
-  }
-  return m_available_controllers.at(id)->has_rumble();
+  const auto* controller = controller_for_port(port);
+  return controller && controller->has_rumble();
 }
 
 bool InputManager::controller_has_pressure_sensitivity_support(const int port) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
-    return false;
-  }
-  const auto id = m_controller_port_mapping.at(port);
-  if (id >= (int)m_available_controllers.size()) {
-    return false;
-  }
-  return m_available_controllers.at(id)->has_pressure_sensitivity_support();
+  const auto* controller = controller_for_port(port);
+  return controller && controller->has_pressure_sensitivity_support();
 }
 
 bool InputManager::controller_has_trigger_effect_support(const int port) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
-    return false;
-  }
-  const auto id = m_controller_port_mapping.at(port);
-  if (id >= (int)m_available_controllers.size()) {
-    return false;
-  }
-  return m_available_controllers.at(id)->has_trigger_effect_support();
+  const auto* controller = controller_for_port(port);
+  return controller && controller->has_trigger_effect_support();
 }
 
 int InputManager::controller_send_rumble(int port, u8 low_intensity, u8 high_intensity) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
+  auto* controller = controller_for_port(port);
+  if (!controller) {
     return 0;
   }
-  return m_available_controllers.at(m_controller_port_mapping.at(port))
-      ->send_rumble(low_intensity, high_intensity);
+  return controller->send_rumble(low_intensity, high_intensity);
 }
 
 void InputManager::controller_send_trigger_rumble(const int port,
                                                   const u16 left_rumble,
                                                   const u16 right_rumble,
                                                   const u32 duration_ms) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
+  auto* controller = controller_for_port(port);
+  if (!controller) {
     return;
   }
-  m_available_controllers.at(m_controller_port_mapping.at(port))
-      ->send_trigger_rumble(left_rumble, right_rumble, duration_ms);
+  controller->send_trigger_rumble(left_rumble, right_rumble, duration_ms);
 }
 
 void InputManager::controller_clear_trigger_effect(const int port,
                                                    dualsense_effects::TriggerEffectOption option) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
+  auto* controller = controller_for_port(port);
+  if (!controller) {
     return;
   }
-  const auto id = m_controller_port_mapping.at(port);
-  if (id >= (int)m_available_controllers.size()) {
-    return;
-  }
-  m_available_controllers.at(id)->clear_trigger_effect(option);
+  controller->clear_trigger_effect(option);
 }
 
 void InputManager::controller_send_trigger_effect_feedback(
@@ -496,14 +574,11 @@ void InputManager::controller_send_trigger_effect_feedback(
     dualsense_effects::TriggerEffectOption option,
     u8 position,
     u8 strength) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
+  auto* controller = controller_for_port(port);
+  if (!controller) {
     return;
   }
-  const auto id = m_controller_port_mapping.at(port);
-  if (id >= (int)m_available_controllers.size()) {
-    return;
-  }
-  m_available_controllers.at(id)->send_trigger_effect_feedback(option, position, strength);
+  controller->send_trigger_effect_feedback(option, position, strength);
 }
 
 void InputManager::controller_send_trigger_effect_vibrate(
@@ -512,15 +587,11 @@ void InputManager::controller_send_trigger_effect_vibrate(
     u8 position,
     u8 amplitude,
     u8 frequency) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
+  auto* controller = controller_for_port(port);
+  if (!controller) {
     return;
   }
-  const auto id = m_controller_port_mapping.at(port);
-  if (id >= (int)m_available_controllers.size()) {
-    return;
-  }
-  m_available_controllers.at(id)->send_trigger_effect_vibrate(option, position, amplitude,
-                                                              frequency);
+  controller->send_trigger_effect_vibrate(option, position, amplitude, frequency);
 }
 
 void InputManager::controller_send_trigger_effect_weapon(
@@ -529,15 +600,11 @@ void InputManager::controller_send_trigger_effect_weapon(
     u8 start_position,
     u8 end_position,
     u8 strength) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
+  auto* controller = controller_for_port(port);
+  if (!controller) {
     return;
   }
-  const auto id = m_controller_port_mapping.at(port);
-  if (id >= (int)m_available_controllers.size()) {
-    return;
-  }
-  m_available_controllers.at(id)->send_trigger_effect_weapon(option, start_position, end_position,
-                                                             strength);
+  controller->send_trigger_effect_weapon(option, start_position, end_position, strength);
 }
 
 bool InputManager::set_trigger_effects_enabled(bool enabled) {
@@ -554,14 +621,11 @@ void InputManager::enqueue_set_controller_led(const int port,
 }
 
 void InputManager::set_controller_led(const int port, const u8 red, const u8 green, const u8 blue) {
-  if (m_controller_port_mapping.find(port) == m_controller_port_mapping.end()) {
+  auto* controller = controller_for_port(port);
+  if (!controller) {
     return;
   }
-  const auto id = m_controller_port_mapping.at(port);
-  if (id >= (int)m_available_controllers.size()) {
-    return;
-  }
-  m_available_controllers.at(id)->set_led(red, green, blue);
+  controller->set_led(red, green, blue);
 }
 
 void InputManager::enqueue_update_rumble(const int port,
@@ -613,30 +677,23 @@ void InputManager::set_wait_for_bind(const InputDeviceType device_type,
   m_waiting_for_bind->keyboard_confirmation_binds =
       m_settings->keyboard_binds.lookup_button_binds(PadData::CROSS);
   m_waiting_for_bind->seen_controller_confirm_neutral = false;
-  if (m_controller_port_mapping.find(0) != m_controller_port_mapping.end() &&
-      m_controller_port_mapping.at(0) < (int)m_available_controllers.size() &&
-      m_settings->controller_binds.find(
-          m_available_controllers.at(m_controller_port_mapping.at(0))->get_guid()) !=
-          m_settings->controller_binds.end()) {
+  const auto* controller = controller_for_port(0);
+  if (controller && m_settings->controller_binds.find(controller->get_guid()) !=
+                       m_settings->controller_binds.end()) {
     m_waiting_for_bind->controller_confirmation_binds =
-        m_settings->controller_binds
-            .at(m_available_controllers.at(m_controller_port_mapping.at(0))->get_guid())
-            .lookup_button_binds(PadData::CROSS);
+        m_settings->controller_binds.at(controller->get_guid()).lookup_button_binds(
+            PadData::CROSS);
   }
   if (g_game_version == GameVersion::Jak1) {
     auto keyboard_circle_binds = m_settings->keyboard_binds.lookup_button_binds(PadData::CIRCLE);
     m_waiting_for_bind->keyboard_confirmation_binds.insert(
         m_waiting_for_bind->keyboard_confirmation_binds.end(), keyboard_circle_binds.begin(),
         keyboard_circle_binds.end());
-    if (m_controller_port_mapping.find(0) != m_controller_port_mapping.end() &&
-        m_controller_port_mapping.at(0) < (int)m_available_controllers.size() &&
-        m_settings->controller_binds.find(
-            m_available_controllers.at(m_controller_port_mapping.at(0))->get_guid()) !=
-            m_settings->controller_binds.end()) {
+    if (controller && m_settings->controller_binds.find(controller->get_guid()) !=
+                         m_settings->controller_binds.end()) {
       auto controller_circle_binds =
-          m_settings->controller_binds
-              .at(m_available_controllers.at(m_controller_port_mapping.at(0))->get_guid())
-              .lookup_button_binds(PadData::CIRCLE);
+          m_settings->controller_binds.at(controller->get_guid()).lookup_button_binds(
+              PadData::CIRCLE);
       m_waiting_for_bind->controller_confirmation_binds.insert(
           m_waiting_for_bind->controller_confirmation_binds.end(), controller_circle_binds.begin(),
           controller_circle_binds.end());
@@ -652,14 +709,11 @@ void InputManager::reset_input_bindings_to_defaults(const int port,
                                                     const InputDeviceType device_type) {
   switch (device_type) {
     case InputDeviceType::CONTROLLER:
-      if (m_controller_port_mapping.find(port) != m_controller_port_mapping.end() &&
-          m_controller_port_mapping.at(port) < (int)m_available_controllers.size() &&
-          m_settings->controller_binds.find(
-              m_available_controllers.at(m_controller_port_mapping.at(port))->get_guid()) !=
-              m_settings->controller_binds.end()) {
-        m_settings->controller_binds
-            .at(m_available_controllers.at(m_controller_port_mapping.at(port))->get_guid())
-            .set_bindings(DEFAULT_CONTROLLER_BINDS);
+      if (auto* controller = controller_for_port(port);
+          controller && m_settings->controller_binds.find(controller->get_guid()) !=
+                             m_settings->controller_binds.end()) {
+        m_settings->controller_binds.at(controller->get_guid()).set_bindings(
+            DEFAULT_CONTROLLER_BINDS);
       }
       break;
     case InputDeviceType::KEYBOARD:

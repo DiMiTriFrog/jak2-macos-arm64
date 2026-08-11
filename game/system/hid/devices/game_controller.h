@@ -31,24 +31,25 @@ class GameController : public InputDevice {
                                   u8 end_position,
                                   u8 strength);
   std::string get_name() const { return m_device_name; }
-  bool has_led() { return m_has_led; }
-  bool has_rumble() { return m_has_rumble; }
+  bool has_led() const { return m_has_led; }
+  bool has_rumble() const { return m_has_rumble; }
   void set_led(const u8 red, const u8 green, const u8 blue);
-  std::string get_guid() { return m_guid; }
-  bool is_dualsense() { return m_is_dualsense; }
-  bool has_trigger_rumble() { return m_has_trigger_rumble; }
-  bool has_trigger_effect_support() { return has_trigger_rumble() || is_dualsense(); }
-  bool has_pressure_sensitivity_support() { return m_has_pressure_sensitive_buttons; }
+  std::string get_guid() const { return m_guid; }
+  SDL_JoystickID get_instance_id() const { return m_sdl_instance_id; }
+  bool is_dualsense() const { return m_is_dualsense; }
+  bool has_trigger_rumble() const { return m_has_trigger_rumble; }
+  bool has_trigger_effect_support() const { return has_trigger_rumble() || is_dualsense(); }
+  bool has_pressure_sensitivity_support() const { return m_has_pressure_sensitive_buttons; }
 
  private:
   int m_sdl_instance_id = -1;
-  SDL_Gamepad* m_device_handle;
-  SDL_Joystick* m_low_device_handle;
+  SDL_Gamepad* m_device_handle = nullptr;
+  SDL_Joystick* m_low_device_handle = nullptr;
   std::string m_device_name = "";
-  bool m_has_led;
-  bool m_has_rumble;
+  bool m_has_led = false;
+  bool m_has_rumble = false;
   std::string m_guid = "";
   bool m_has_pressure_sensitive_buttons = false;
-  bool m_is_dualsense;
-  bool m_has_trigger_rumble;
+  bool m_is_dualsense = false;
+  bool m_has_trigger_rumble = false;
 };

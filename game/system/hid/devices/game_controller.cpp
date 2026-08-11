@@ -13,7 +13,6 @@ GameController::GameController(int sdl_device_id,
                                std::shared_ptr<game_settings::InputSettings> settings)
     : m_sdl_instance_id(sdl_device_id) {
   m_settings = settings;
-  m_loaded = false;
   m_device_handle = SDL_OpenGamepad(sdl_device_id);
   if (!m_device_handle) {
     sdl_util::log_error(
@@ -27,9 +26,8 @@ GameController::GameController(int sdl_device_id,
         fmt::format("Could not get underlying joystick for gamecontroller: id {}", sdl_device_id));
     return;
   }
-  auto test = SDL_GetNumJoystickAxes(m_low_device_handle);
   m_sdl_instance_id = SDL_GetJoystickID(m_low_device_handle);
-  if (!m_sdl_instance_id) {
+  if (m_sdl_instance_id < 0) {
     sdl_util::log_error(
         fmt::format("Could not determine instance id for gamecontroller: id {}", sdl_device_id));
     return;
@@ -268,10 +266,21 @@ void GameController::process_event(const SDL_Event& event,
 
 void GameController::close_device() {
   if (m_device_handle) {
+    // Stop effects before closing the SDL handle. This is best effort because
+    // the device may already have disappeared from the OS.
+    SDL_RumbleGamepad(m_device_handle, 0, 0, 0);
+    SDL_RumbleGamepadTriggers(m_device_handle, 0, 0, 0);
     clear_trigger_effect(dualsense_effects::TriggerEffectOption::BOTH);
     SDL_CloseGamepad(m_device_handle);
-    m_device_handle = NULL;
+    m_device_handle = nullptr;
   }
+  m_low_device_handle = nullptr;
+  m_loaded = false;
+  m_has_led = false;
+  m_has_rumble = false;
+  m_has_trigger_rumble = false;
+  m_has_pressure_sensitive_buttons = false;
+  m_is_dualsense = false;
 }
 
 int GameController::send_rumble(const u8 low_rumble, const u8 high_rumble) {

@@ -178,6 +178,7 @@ class InputManager {
   bool m_auto_hide_mouse = true;
   bool m_mouse_currently_hidden = false;
   bool m_ignore_background_controller_events = false;
+  bool m_controller_refresh_pending = false;
 
   /// No inputs will be processed while in this mode the first input detected from the relevant
   /// device type will be used to set the bind and clear the flag
@@ -187,6 +188,8 @@ class InputManager {
 
   void refresh_device_list();
   void clear_inputs();
+  GameController* controller_for_port(const int port) noexcept;
+  const GameController* controller_for_port(const int port) const noexcept;
 
   void ignore_background_controller_events(const bool ignore);
   void set_controller_led(const int port, const u8 red, const u8 green, const u8 blue);
