@@ -74,6 +74,11 @@
 ;; Each kernel process under test gets its own private stack region so that no
 ;; two processes can alias the same memory.  The stack top is the high end of
 ;; the region: [top - PROCESS_STACK_SIZE, top).
+(defun test-private-stack-top ()
+  (let ((stack-block (malloc 'global PROCESS_STACK_SIZE)))
+    (&+ (the-as (pointer uint8) stack-block) PROCESS_STACK_SIZE))
+  )
+
 (defun test-stack-tops-overlap ((stacks (pointer pointer)) (count int))
   (let ((ok #t))
     (dotimes (i count)
@@ -118,10 +123,7 @@
     ;; One private stack per process: two initializers and their two children.
     ;; malloc 'global keeps each region alive after this function returns.
     (dotimes (i 4)
-      (let ((stack-block (malloc 'global PROCESS_STACK_SIZE)))
-        (set! (-> stacks i)
-              (&+ (the-as (pointer uint8) stack-block) PROCESS_STACK_SIZE))
-        )
+      (set! (-> stacks i) (test-private-stack-top))
       )
     (unless (test-stack-tops-overlap stacks 4)
       ;; Reaching this branch means the fixture violated stack ownership.
@@ -201,16 +203,19 @@
     )
 
 (defun state-test ()
-  (let ((proc (get-process *nk-dead-pool* process 1024)))
-    (activate proc *active-pool* "check-proc" *kernel-dram-stack*)
-    (run-now-in-process proc (lambda (x y z w) (go xmm-check-state x y z w))
-                        9 8 7 6)
-    )
+  (let ((check-stack-top (test-private-stack-top))
+        (wreck-stack-top (test-private-stack-top)))
+    (let ((proc (get-process *nk-dead-pool* process 1024)))
+      (activate proc *active-pool* "check-proc" check-stack-top)
+      (run-now-in-process proc (lambda (x y z w) (go xmm-check-state x y z w))
+                          9 8 7 6)
+      )
 
-  (let ((proc (get-process *nk-dead-pool* process 1024)))
-    (activate proc *active-pool* "wreck-proc" *kernel-dram-stack*)
-    (run-next-time-in-process proc (lambda (x y z w) (go xmm-wreck-state x y z w))
-                              3 4 5 6)
+    (let ((proc (get-process *nk-dead-pool* process 1024)))
+      (activate proc *active-pool* "wreck-proc" wreck-stack-top)
+      (run-next-time-in-process proc (lambda (x y z w) (go xmm-wreck-state x y z w))
+                                3 4 5 6)
+      )
     )
   0
   )
@@ -284,19 +289,27 @@
   (process-deactivate)
   )
 
-(defun gpr-context-test ()
-  (let ((check-proc (get-process *nk-dead-pool* process 1024))
-        (wreck-proc (get-process *nk-dead-pool* process 1024)))
-    (activate check-proc *active-pool* "gpr-context-check" *kernel-dram-stack*)
-    (activate wreck-proc *active-pool* "gpr-context-wreck" *kernel-dram-stack*)
+(defun gpr-context-setup ()
+  (let ((stacks (new 'stack-no-clear 'array 'pointer 2)))
+    (dotimes (i 2)
+      (set! (-> stacks i) (test-private-stack-top)))
+    (unless (test-stack-tops-overlap stacks 2)
+      (throw 'initialize #f))
+    (define check-proc (get-process *nk-dead-pool* process 1024))
+    (activate check-proc *active-pool* "gpr-context-check" (-> stacks 0))
     (set-to-run (-> check-proc main-thread)
                 gpr-context-check-code
                 11 22 33 44 55 66)
+    (define wreck-proc (get-process *nk-dead-pool* process 1024))
+    (activate wreck-proc *active-pool* "gpr-context-wreck" (-> stacks 1))
     (set-to-run (-> wreck-proc main-thread)
                 gpr-context-wreck-code
-                0 0 0 0 0 0)
-    0)
-  )
+                101 102 103 104 105 106)
+    0))
+
+(defun gpr-context-test ()
+  (gpr-context-setup)
+  0)
 
 ;; Negative control: exercise the comparator's failure branch with a known
 ;; altered sentinel. This guards against a vacuous "process stayed alive" test.

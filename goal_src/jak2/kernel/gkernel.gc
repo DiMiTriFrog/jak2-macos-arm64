@@ -809,8 +809,7 @@
   "Resume a suspended thread. Call this from the kernel only.
    This is also used to start a thread initialized with set-to-run.
    As a result of MIPS/x86 differences, there is a hack for this."
-  (declare (asm-func none)
-           )
+  (declare (asm-func none))
 
   (with-context-extra-saved-gprs
     (rlet ((this :reg r13 :type cpu-thread)
@@ -2405,8 +2404,7 @@
    This stub remaps these saved registers to argument registers.
    It also creates a return trampoline to return-from-thread-dead, so if the main thread returns, the
    process is properly cleaned up by deactivate."
-  (declare (asm-func none)
-           )
+  (declare (asm-func none))
 
   (with-context-extra-saved-gprs
     (rlet ((s0 :reg saved-gpr0 :type uint)

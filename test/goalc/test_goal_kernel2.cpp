@@ -161,7 +161,7 @@ TEST_F(Jak2KernelTest, GprContextAcrossSuspend) {
   shared_compiler->runner.c->run_test_from_string(
       "(ml \"test/goalc/source_templates/jak2/kernel-test.gc\")");
   std::string result =
-      send_code_and_get_multiple_responses("(gpr-context-test)", 1, &shared_compiler->runner);
+      send_code_and_get_multiple_responses("(gpr-context-test)", 2, &shared_compiler->runner);
 
   std::string expected =
       "0\n"
@@ -176,7 +176,7 @@ TEST_F(Jak2KernelTest, GprContextNegativeControl) {
                                                               &shared_compiler->runner);
 
   std::string expected =
-      "0\n"
-      "GPR-CONTEXT-NEGATIVE-DETECTED slot 6\n";
+      "GPR-CONTEXT-NEGATIVE-DETECTED slot 6\n"
+      "0\n";
   EXPECT_EQ(expected, result);
 }

@@ -91,7 +91,9 @@ void from_json(const json& j, DisplaySettings& obj) {
 DisplaySettings::DisplaySettings() {}
 
 void DisplaySettings::load_settings() {
+#if defined(__APPLE__) && defined(__aarch64__)
   bool settings_file_loaded = false;
+#endif
   try {
     std::string file_path =
         (file_util::get_user_settings_dir(g_game_version) / "display-settings.json").string();
@@ -106,7 +108,9 @@ void DisplaySettings::load_settings() {
       lg::info("Loading display settings at {}", file_path);
       auto raw = file_util::read_text_file(file_path);
       from_json(parse_commented_json(raw, "display-settings.json"), *this);
+#if defined(__APPLE__) && defined(__aarch64__)
       settings_file_loaded = true;
+#endif
     }
   } catch (std::exception& e) {
     // do nothing
