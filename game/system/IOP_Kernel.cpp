@@ -401,22 +401,30 @@ std::optional<time_stamp> IOP_Kernel::dispatch() {
   updateDelay();
   processWakeups();
 
+  // VBlank is delivered by the graphics thread.  Service it before looking for a
+  // runnable IOP thread: the handler itself can wake a sleeping thread (the Jak 2
+  // stream worker is one such consumer).  Waiting until the scheduler has already
+  // found a ready thread loses that wakeup whenever the IOP is otherwise idle.
+  const auto process_vblank = [this] {
+    if (vblank_handler != nullptr && vblank_recieved.exchange(false)) {
+      vblank_handler(nullptr);
+      processWakeups();
+    }
+  };
+  process_vblank();
+
   // Run until all threads are idle
   IopThread* next = schedNext();
   if (next) {
     prof().root_event();
   }
   while (next != nullptr) {
-    // Check vblank interrupt
-    if (vblank_handler != nullptr && vblank_recieved) {
-      vblank_handler(nullptr);
-      vblank_recieved = false;
-    }
     // printf("[IOP Kernel] Dispatch %s (%d)\n", next->name.c_str(), next->thID);
     auto p = scoped_prof(next->name.c_str());
     runThread(next);
     updateDelay();
     processWakeups();
+    process_vblank();
     next = schedNext();
     // printf("[IOP Kernel] back to kernel!\n");
   }

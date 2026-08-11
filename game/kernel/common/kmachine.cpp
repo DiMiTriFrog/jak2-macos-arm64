@@ -90,12 +90,10 @@ void InitVideo() {
     lang = SCE_ENGLISH_LANGUAGE;
   }
   auto filename = "SCREEN1." + lang_to_splash_map.at(lang);
-  auto path = file_util::get_jak_project_dir() / "out" / game_version_names[g_game_version] /
-              "iso" / filename;
+  auto path = file_util::get_game_output_dir(g_game_version) / "iso" / filename;
   if (lang != SCE_ENGLISH_LANGUAGE && !fs::exists(path)) {
     lg::warn("InitVideo: file {} not found, falling back to english...\n", filename);
-    path = file_util::get_jak_project_dir() / "out" / game_version_names[g_game_version] / "iso" /
-           "SCREEN1.USA";
+    path = file_util::get_game_output_dir(g_game_version) / "iso" / "SCREEN1.USA";
   }
   if (!fs::exists(path)) {
     lg::warn("InitVideo: splash screen not found!\n");

@@ -73,7 +73,7 @@ struct IRHarness {
                                  std::array<u64, 4> args) {
 #if defined(__aarch64__)
   CodeTester t(InstructionSet::ARM64);
-  t.init_code_buffer(512);
+  t.init_code_buffer(2048);
   t.append_bytes(data.data() + 4, int(data.size() - 4));
   t.emit(mov_gpr64_gpr64(t.generator(), X0, capture));
   t.emit_return();
@@ -89,7 +89,11 @@ struct IRHarness {
 [[maybe_unused]] u64 execute_with_st(const std::vector<u8>& data, u64 st, std::array<u64, 4> args) {
 #if defined(__aarch64__)
   CodeTester t(InstructionSet::ARM64);
-  t.init_code_buffer(512);
+  t.init_code_buffer(1 << 20);
+  // GOAL addresses are relative to the host-mapped base in x22.  The fake
+  // storage passed to this unit test is already a host address, so use a
+  // zero base here.
+  t.emit(mov_gpr64_u64(t.generator(), X22, 0));
   t.emit(mov_gpr64_gpr64(t.generator(), X21, X2));
   t.append_bytes(data.data() + 4, int(data.size() - 4));
   t.emit_return();
@@ -124,11 +128,14 @@ TEST(ARM64IRAsmBasic, RetLeafAndFpuCompatibilityOps) {
   // wrapper, without requiring a synthetic epilogue.
   IRHarness leaf;
   IR_Record leaf_ir = leaf.gen.add_ir(leaf.func);
-  IR_AsmRet ret(true);
+  IR_AsmRet ret(true, true);
   ret.do_codegen_arm64(&leaf.gen, leaf.allocs, leaf_ir);
   auto leaf_data = leaf.generate();
   CodeTester leaf_t(InstructionSet::ARM64);
   leaf_t.init_code_buffer(64);
+  // GOAL asm keeps the historical rax value in ARM64 x8.  The ARM64 asm
+  // return bridge moves it to the platform return register x0.
+  leaf_t.emit(mov_gpr64_gpr64(leaf_t.generator(), X8, X0));
   leaf_t.append_bytes(leaf_data.data() + 4, int(leaf_data.size() - 4));
   EXPECT_EQ(leaf_t.execute(0x1122334455667788ull, 0, 0, 0), 0x1122334455667788ull);
 

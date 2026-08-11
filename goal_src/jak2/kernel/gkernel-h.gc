@@ -10,7 +10,17 @@
 (defconstant *kernel-major-version* 2)
 (defconstant *kernel-minor-version* 0)
 
-(defconstant DPROCESS_STACK_SIZE (#if PC_PORT #x8000 #x3800))
+;; Stable return values of the incremental C++ linker.
+;; Failed must remain zero so an allocation error is never treated as a
+;; completed link by legacy truthiness checks.
+(defconstant LINK_STATUS_FAILED 0)
+(defconstant LINK_STATUS_IN_PROGRESS 1)
+(defconstant LINK_STATUS_COMPLETE 2)
+
+(defconstant DPROCESS_STACK_SIZE
+  (#if PC_PORT
+       (#if ARM64_TARGET #x800000 #x8000)
+       #x3800))
 (defconstant PROCESS_STACK_SIZE (#if PC_PORT #x4000 #x1c00))
 
 ;; the size of the shared heap used by dynamically sized processes

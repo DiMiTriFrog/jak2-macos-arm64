@@ -1,6 +1,7 @@
 #include <cstring>
 #include <memory>
 
+#include "common/link_types.h"
 #include "common/type_system/TypeSystem.h"
 
 #include "goalc/compiler/IR.h"
@@ -65,7 +66,9 @@ struct IRHarness {
                      u64 in1) {
 #ifdef __aarch64__
     CodeTester t(InstructionSet::ARM64);
-    t.init_code_buffer(256);
+    // ARM64 object generation page-aligns static data so code pages can be RX
+    // while static data remains writable.
+    t.init_code_buffer(0x10000);
     t.emit(IGen::mov_gpr64_gpr64(t.generator(), X21, X2));
     t.emit(IGen::mov_gpr64_gpr64(t.generator(), X22, X3));
     // copy the whole tail (instructions + trailing statics) so the patched
@@ -144,11 +147,14 @@ TEST(ARM64IRSymbols, LoadSymbolPointerNamed) {
   ir.do_codegen_arm64(&h.gen, h.allocs, ir0);
   h.finish();
   auto data = h.generate();
-  // sequence: ldr x0, [pc, #4] ; mov x0, x21 ; add x0, x0, x16 ; ret ; .quad literal
+  // The symbol link is signed 32-bit.  Use a negative offset to verify that
+  // ARM64 sign-extends it before adding it to the GOAL s7 offset.
   EXPECT_GE(data.size(), 4 + 16 + 8);
-  // execute with st = 0x1000 and offset = 0: result = st + 0 = 0x1000
-  u64 r = h.execute_instrs(data, 4, 0x1000, 0, 0, 0);
-  EXPECT_EQ(r, 0x1000u);
+  u64 negative_symbol_offset = 0x00000000fffffea0ULL;
+  memcpy(data.data() + h.literal_offset(data), &negative_symbol_offset, sizeof(negative_symbol_offset));
+  // execute with st = 0x200000: result = 0x200000 - 0x160.
+  u64 r = h.execute_instrs(data, 4, 0x200000, 0, 0, 0);
+  EXPECT_EQ(r, 0x1ffea0u);
   // the symbol link table must contain a LINK_SYMBOL_OFFSET entry.
   EXPECT_TRUE(has_link_kind(h.gen.generate_data_v3(&h.ts).link_tables.at(0), 1));
 #endif
@@ -165,6 +171,11 @@ TEST(ARM64IRSymbols, SetSymbolValue) {
   ir.do_codegen_arm64(&h.gen, h.allocs, ir0);
   h.finish();
   auto data = h.generate();
+  // The literal starts with the no-offset sentinel for the runtime linker.
+  // Simulate the linker result of (symbol offset - 1) == 0 for this buffer.
+  EXPECT_EQ(read_word(data, h.literal_offset(data)), LINK_SYM_NO_OFFSET_FLAG);
+  u64 zero_symbol_offset = 0;
+  memcpy(data.data() + h.literal_offset(data), &zero_symbol_offset, sizeof(zero_symbol_offset));
   // execute: st points to a 4-byte buffer, offset = 0 -> store x0 into [st].
   u32 buf = 0;
   u64 r = h.execute_instrs(data, 4, (u64)&buf, 0, 0xCAFEBABE, 0);
@@ -185,6 +196,9 @@ TEST(ARM64IRSymbols, GetSymbolValue) {
     ir.do_codegen_arm64(&h.gen, h.allocs, ir0);
     h.finish();
     auto data = h.generate();
+    EXPECT_EQ(read_word(data, h.literal_offset(data)), LINK_SYM_NO_OFFSET_FLAG);
+    u64 zero_symbol_offset = 0;
+    memcpy(data.data() + h.literal_offset(data), &zero_symbol_offset, sizeof(zero_symbol_offset));
     u32 buf = sext ? 0x80000000u : 0x12345678u;
     u64 r = h.execute_instrs(data, 4, (u64)&buf, 0, 0, 0);
     u32 expected = (u32)r;
@@ -249,7 +263,7 @@ TEST(ARM64IRSymbols, StaticVarLoadFloat) {
     }
   }
   CodeTester t(InstructionSet::ARM64);
-  t.init_code_buffer(256);
+  t.init_code_buffer(0x10000);
   t.append_bytes(data.data() + 4, (int)(data.size() - 4));
   t.emit_return();
   u64 r = t.execute(0, 0, 0, 0);

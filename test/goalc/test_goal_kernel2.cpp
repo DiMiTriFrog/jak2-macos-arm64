@@ -38,7 +38,14 @@ class Jak2KernelTest : public testing::Test {
   void TearDown() {}
 
   struct SharedCompiler {
-    SharedCompiler(GameVersion v) : compiler(v, emitter::InstructionSet::X86) {}
+    SharedCompiler(GameVersion v)
+        : compiler(v,
+#if defined(__aarch64__)
+                   emitter::InstructionSet::ARM64
+#else
+                   emitter::InstructionSet::X86
+#endif
+          ) {}
     std::thread runtime_thread;
     Compiler compiler;
     GoalTest::CompilerTestRunner runner;
@@ -147,5 +154,29 @@ TEST_F(Jak2KernelTest, ThrowXmm) {
       "value now is 10.1000\n"
       "now its 10.1000\n"
       "0\n";
+  EXPECT_EQ(expected, result);
+}
+
+TEST_F(Jak2KernelTest, GprContextAcrossSuspend) {
+  shared_compiler->runner.c->run_test_from_string(
+      "(ml \"test/goalc/source_templates/jak2/kernel-test.gc\")");
+  std::string result =
+      send_code_and_get_multiple_responses("(gpr-context-test)", 1, &shared_compiler->runner);
+
+  std::string expected =
+      "0\n"
+      "GPR-CONTEXT-OK\n";
+  EXPECT_EQ(expected, result);
+}
+
+TEST_F(Jak2KernelTest, GprContextNegativeControl) {
+  shared_compiler->runner.c->run_test_from_string(
+      "(ml \"test/goalc/source_templates/jak2/kernel-test.gc\")");
+  std::string result = send_code_and_get_multiple_responses("(gpr-context-negative-test)", 1,
+                                                              &shared_compiler->runner);
+
+  std::string expected =
+      "0\n"
+      "GPR-CONTEXT-NEGATIVE-DETECTED slot 6\n";
   EXPECT_EQ(expected, result);
 }

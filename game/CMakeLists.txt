@@ -368,6 +368,11 @@ add_executable(gk main.cpp)
 target_link_libraries(gk runtime)
 if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
     set_target_properties(gk PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist.in"
+        MACOSX_RPATH TRUE
+        BUILD_RPATH "@loader_path/../Frameworks"
+        INSTALL_RPATH "@executable_path/../Frameworks"
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/macos/jak-jit.entitlements"
     )
 endif()

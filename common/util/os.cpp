@@ -47,10 +47,12 @@ void __cpuidex(int result[4], int eax, int ecx) {
       : "0"(eax), "2"(ecx));
 }
 #else
-// TODO ARM - implement ARM64 detection, check for NEON instead of AVX
-// for now, just return 0's.
+// ARM64 has no x86 CPUID instruction.  The GOAL ARM64 backend does not use
+// x86 AVX feature bits, so retain a zero-filled compatibility implementation
+// for code that still references this legacy helper on non-x86 hosts.
 void __cpuidex(int result[4], int eax, int ecx) {
-  lg::warn("cpuid not implemented on this platform");
+  (void)eax;
+  (void)ecx;
   for (int i = 0; i < 4; i++) {
     result[i] = 0;
   }
@@ -63,6 +65,33 @@ void setup_cpu_info() {
   if (gCpuInfo.initialized) {
     return;
   }
+
+#if defined(__aarch64__)
+  // AVX is an x86 capability and must not be used as a gate for the native
+  // ARM64 runtime.  Keep the fields false so x86-only optional paths remain
+  // disabled, while reporting the actual Apple CPU model when available.
+#ifdef __APPLE__
+  char model[256] = {};
+  size_t model_size = sizeof(model);
+  if (sysctlbyname("machdep.cpu.brand_string", model, &model_size, nullptr, 0) == 0) {
+    gCpuInfo.brand = model;
+    gCpuInfo.model = model;
+  }
+#endif
+  if (gCpuInfo.brand.empty()) {
+    gCpuInfo.brand = "ARM64";
+    gCpuInfo.model = "ARM64";
+  }
+
+  printf("-------- CPU Information --------\n");
+  printf(" Brand: %s\n", gCpuInfo.brand.c_str());
+  printf(" Model: %s\n", gCpuInfo.model.c_str());
+  printf(" AVX  : false (not applicable to ARM64)\n");
+  printf(" AVX2 : false (not applicable to ARM64)\n");
+  fflush(stdout);
+  gCpuInfo.initialized = true;
+  return;
+#endif
 
   // as a test, get the brand and model
   for (u32 i = 0x80000002; i <= 0x80000004; i++) {
@@ -112,6 +141,20 @@ void setup_cpu_info() {
 
 CpuInfo& get_cpu_info() {
   return gCpuInfo;
+}
+
+bool is_process_translated() {
+#ifndef __APPLE__
+  return false;
+#else
+  int translated = 0;
+  size_t translated_size = sizeof(translated);
+  if (sysctlbyname("sysctl.proc_translated", &translated, &translated_size, nullptr, 0) != 0) {
+    // The key is absent for native processes and on older macOS versions.
+    return false;
+  }
+  return translated != 0;
+#endif
 }
 
 std::optional<double> get_macos_major_version() {

@@ -346,8 +346,9 @@ TEST(ARM64IRVector, ScratchRegistersExcludedOnlyOnArm64) {
   IR_BlendVF blend(true, dst.get(), src1.get(), src2.get(), 0b0101);
   auto arm_blend = blend.to_rai(InstructionSet::ARM64);
   auto x86_blend = blend.to_rai(InstructionSet::X86);
-  ASSERT_EQ(arm_blend.exclude.size(), 1);
+  ASSERT_EQ(arm_blend.exclude.size(), 2);
   EXPECT_EQ(arm_blend.exclude.at(0), X16);
+  EXPECT_EQ(arm_blend.exclude.at(1), V16);
   EXPECT_TRUE(x86_blend.exclude.empty());
 
   IR_SwizzleVF swizzle(true, dst.get(), src1.get(), 0b11100100);

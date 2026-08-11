@@ -22,6 +22,9 @@ extern bool kheaplogging;
 // flags for kmalloc/ksmalloc
 constexpr u32 KMALLOC_TOP = 0x2000;     //! Flag to allocate temporary memory from heap top
 constexpr u32 KMALLOC_MEMSET = 0x1000;  //! Flag to clear memory
+// On Apple ARM64, executable GOAL objects reserve whole JIT pages so code pages never share
+// storage with mutable heap data.
+constexpr u32 KMALLOC_EXECUTABLE = 0x4000;
 constexpr u32 KMALLOC_ALIGN_256 = 0x100;
 constexpr u32 KMALLOC_ALIGN_64 = 0x40;
 constexpr u32 KMALLOC_ALIGN_16 = 0x10;

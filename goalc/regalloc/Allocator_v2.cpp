@@ -307,15 +307,17 @@ std::vector<emitter::Register> allowable_local_var_move_elim = {
     emitter::XMM1,  emitter::XMM0,  emitter::XMM8,  emitter::XMM9, emitter::XMM10, emitter::XMM11,
     emitter::XMM12, emitter::XMM13, emitter::XMM14, emitter::XMM15};
 
-// ARM64 equivalents of the x86 order tables above.  x16, x17, x18, x29, x30
-// and sp are intentionally absent (x18 is reserved by the platform).
+// ARM64 equivalents of the x86 order tables above.  x16, x17, x18, x20, x21,
+// x22, x29, x30 and sp are intentionally absent.  x20-x22 carry the GOAL
+// process, symbol-table, and memory-offset context and must not be allocated
+// to ordinary values.
 AssignmentOrder ARM64_REG_saved_first_order = {
     {emitter::V8,  emitter::V9,  emitter::V10, emitter::V11, emitter::V12, emitter::V13,
      emitter::V14, emitter::V15, emitter::V7,  emitter::V6,  emitter::V5,  emitter::V4,
      emitter::V3,  emitter::V2,  emitter::V1,  emitter::V0},
-    {emitter::X19, emitter::X20, emitter::X21, emitter::X22, emitter::X23, emitter::X24,
-     emitter::X25, emitter::X26, emitter::X27, emitter::X28, emitter::X0,  emitter::X1,
-     emitter::X2,  emitter::X3,  emitter::X4,  emitter::X5,  emitter::X6,  emitter::X7,
+    {emitter::X19, emitter::X23, emitter::X24, emitter::X25, emitter::X26, emitter::X27,
+     emitter::X28, emitter::X0,  emitter::X1,  emitter::X2,  emitter::X3,  emitter::X4,
+     emitter::X5,  emitter::X6,  emitter::X7,
      emitter::X8,  emitter::X9,  emitter::X10, emitter::X11, emitter::X12, emitter::X13,
      emitter::X14, emitter::X15}};
 
@@ -325,8 +327,8 @@ AssignmentOrder ARM64_REG_temp_first_order = {
      emitter::V12, emitter::V13, emitter::V14, emitter::V15},
     {emitter::X0,  emitter::X1,  emitter::X2,  emitter::X3,  emitter::X4,  emitter::X5,
      emitter::X6,  emitter::X7,  emitter::X8,  emitter::X9,  emitter::X10, emitter::X11,
-     emitter::X12, emitter::X13, emitter::X14, emitter::X15, emitter::X19, emitter::X20,
-     emitter::X21, emitter::X22, emitter::X23, emitter::X24, emitter::X25, emitter::X26,
+     emitter::X12, emitter::X13, emitter::X14, emitter::X15, emitter::X19, emitter::X23,
+     emitter::X24, emitter::X25, emitter::X26,
      emitter::X27, emitter::X28}};
 
 AssignmentOrder ARM64_REG_extra_hard_order = {
@@ -344,8 +346,8 @@ AssignmentOrder ARM64_REG_temp_only_order = {{emitter::V7,  emitter::V6,  emitte
 std::vector<emitter::Register> allowable_local_var_move_elim_arm64 = {
     emitter::X0,  emitter::X1,  emitter::X2,  emitter::X3,  emitter::X4,  emitter::X5,  emitter::X6,
     emitter::X7,  emitter::X8,  emitter::X9,  emitter::X10, emitter::X11, emitter::X12, emitter::X13,
-    emitter::X14, emitter::X15, emitter::X19, emitter::X20, emitter::X21, emitter::X22, emitter::X23,
-    emitter::X24, emitter::X25, emitter::X26, emitter::X27, emitter::X28, emitter::V0,  emitter::V1,
+    emitter::X14, emitter::X15, emitter::X19, emitter::X23, emitter::X24, emitter::X25,
+    emitter::X26, emitter::X27, emitter::X28, emitter::V0,  emitter::V1,
     emitter::V2,  emitter::V3,  emitter::V4,  emitter::V5,  emitter::V6,  emitter::V7,  emitter::V8,
     emitter::V9,  emitter::V10, emitter::V11, emitter::V12, emitter::V13, emitter::V14, emitter::V15,
     emitter::V16, emitter::V17, emitter::V18, emitter::V19, emitter::V20, emitter::V21, emitter::V22,

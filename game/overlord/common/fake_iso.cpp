@@ -55,8 +55,8 @@ void fake_iso_init_globals() {
  * Initialize the file system.
  */
 int fake_iso_FS_Init() {
-  for (const auto& f : fs::directory_iterator(file_util::get_jak_project_dir() / "out" /
-                                              game_version_names[g_game_version] / "iso")) {
+  const auto iso_dir = file_util::get_game_output_dir(g_game_version) / "iso";
+  for (const auto& f : fs::directory_iterator(iso_dir)) {
     if (f.is_regular_file() || f.is_symlink()) {
       ASSERT(fake_iso_entry_count < MAX_ISO_FILES);
       FakeIsoEntry* e = &fake_iso_entries[fake_iso_entry_count];
@@ -65,8 +65,7 @@ int fake_iso_FS_Init() {
       ASSERT_MSG(f.exists(),            // should only happen if the file is a symlink, afaik
                  fmt::format("[FAKEISO] couldn't find {} -- broken symlink?", file_name));
       strcpy(e->iso_name, file_name.c_str());
-      e->full_path = fmt::format("{}/out/{}/iso/{}", file_util::get_jak_project_dir().string(),
-                                 game_version_names[g_game_version], file_name);
+      e->full_path = fmt::format("{}/{}", iso_dir.string(), file_name);
       fake_iso_entry_count++;
     }
   }

@@ -84,26 +84,35 @@ u64 alloc_from_heap(u32 heap_symbol, u32 type, s32 size, u32 pp) {
   using namespace jak2_symbols;
   auto heap_ptr = Ptr<Symbol4<Ptr<kheapinfo>>>(heap_symbol)->value();
 
+  u32 allocation_flags = KMALLOC_MEMSET;
+#if defined(__APPLE__) && defined(__aarch64__)
+  // The function type is allocated before its GOAL symbol is initialized, so this check must
+  // happen before the type metadata fast paths below.
+  if (type && type == u32_in_fixed_sym(FIX_SYM_FUNCTION_TYPE)) {
+    allocation_flags |= KMALLOC_EXECUTABLE;
+  }
+#endif
+
   s32 aligned_size = ((size + 0xf) / 0x10) * 0x10;
   if ((heap_symbol == s7.offset + FIX_SYM_GLOBAL_HEAP) ||
       (heap_symbol == s7.offset + FIX_SYM_DEBUG) ||
       (heap_symbol == s7.offset + FIX_SYM_LOADING_LEVEL) ||
       (heap_symbol == s7.offset + FIX_SYM_PROCESS_LEVEL_HEAP)) {
     if (!type) {  // no type given, just call it a global-object
-      return kmalloc(heap_ptr, size, KMALLOC_MEMSET, "global-object").offset;
+      return kmalloc(heap_ptr, size, allocation_flags, "global-object").offset;
     }
 
     Ptr<Type> typ(type);
     if (!typ->symbol.offset) {  // type doesn't have a symbol, just call it a global-object
-      return kmalloc(heap_ptr, size, KMALLOC_MEMSET, "global-object").offset;
+      return kmalloc(heap_ptr, size, allocation_flags, "global-object").offset;
     }
 
     Ptr<String> gstr = sym_to_string(typ->symbol);
     if (!gstr->len) {  // string has nothing in it.
-      return kmalloc(heap_ptr, size, KMALLOC_MEMSET, "global-object").offset;
+      return kmalloc(heap_ptr, size, allocation_flags, "global-object").offset;
     }
 
-    return kmalloc(heap_ptr, size, KMALLOC_MEMSET, gstr->data()).offset;
+    return kmalloc(heap_ptr, size, allocation_flags, gstr->data()).offset;
   } else if (heap_symbol == s7.offset + FIX_SYM_PROCESS_TYPE) {
     u32 start = *Ptr<u32>(pp + 0x64);
     u32 heapEnd = *Ptr<u32>(pp + 0x60);

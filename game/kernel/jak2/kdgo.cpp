@@ -1,6 +1,7 @@
 #include "kdgo.h"
 
 #include "common/global_profiler/GlobalProfiler.h"
+#include "common/jit_memory.h"
 #include "common/link_types.h"
 #include "common/log/log.h"
 #include "common/util/BitUtils.h"
@@ -149,8 +150,7 @@ void load_and_link_dgo_from_c_fast(const char* name,
   }
 
   // open the DGO file:
-  auto file_path = file_util::get_jak_project_dir() / "out" / game_version_names[g_game_version] /
-                   "iso" / name_on_cd;
+  auto file_path = file_util::get_game_output_dir(g_game_version) / "iso" / name_on_cd;
   auto fp = file_util::open_file(file_path, "rb");
   if (!fp) {
     lg::die("Failed to open DGO: {}, path {}\n", name, file_path.string());
@@ -169,6 +169,11 @@ void load_and_link_dgo_from_c_fast(const char* name,
 
   // load all but the final
   for (int i = 0; i < (int)header.object_count - 1; i++) {
+#if defined(__APPLE__) && defined(__aarch64__)
+    // Linking a previous object may have made part of this temporary buffer
+    // executable. Reopen it before the next object is read into it.
+    jit_memory::make_writable(buffer1.c(), static_cast<size_t>(bufferSize));
+#endif
     if (fread(buffer1.c(), sizeof(ObjectHeader), 1, fp) != 1) {
       lg::die("failed to read object header");
     }
@@ -183,12 +188,18 @@ void load_and_link_dgo_from_c_fast(const char* name,
   }
 
   auto final_object_dest = Ptr<u8>((heap->current + 0x3f).offset & 0xffffffc0);
+#if defined(__APPLE__) && defined(__aarch64__)
+  jit_memory::make_writable(final_object_dest.c(), sizeof(ObjectHeader));
+#endif
   if (fread(final_object_dest.c(), sizeof(ObjectHeader), 1, fp) != 1) {
     lg::die("failed to read final object header");
   }
   auto* obj_header = (ObjectHeader*)final_object_dest.c();
   u32 aligned_size = align16(obj_header->size);
   auto* obj_dest = (final_object_dest + sizeof(ObjectHeader)).c();
+#if defined(__APPLE__) && defined(__aarch64__)
+  jit_memory::make_writable(obj_dest, static_cast<size_t>(aligned_size));
+#endif
   if (fread(obj_dest, aligned_size, 1, fp) != 1) {
     lg::die("Failed to read object data");
   }
@@ -222,6 +233,11 @@ void load_and_link_dgo_from_c(const char* name,
   auto buffer2 = kmalloc(heap, bufferSize, KMALLOC_TOP | KMALLOC_ALIGN_64, "dgo-buffer-2");
   auto buffer1 = kmalloc(heap, bufferSize, KMALLOC_TOP | KMALLOC_ALIGN_64, "dgo-buffer-2");
 
+#if defined(__APPLE__) && defined(__aarch64__)
+  jit_memory::make_writable(buffer1.c(), static_cast<size_t>(bufferSize));
+  jit_memory::make_writable(buffer2.c(), static_cast<size_t>(bufferSize));
+#endif
+
   // build filename.  If no extension is given, default to CGO.
   char fileName[16];
   kstrcpyup(fileName, name);
@@ -234,6 +250,10 @@ void load_and_link_dgo_from_c(const char* name,
   sShowStallMsg = 0;
 
   // start load on IOP.
+#if defined(__APPLE__) && defined(__aarch64__)
+  jit_memory::make_writable(buffer1.c(), static_cast<size_t>(bufferSize));
+  jit_memory::make_writable(buffer2.c(), static_cast<size_t>(bufferSize));
+#endif
   BeginLoadingDGO(
       fileName, buffer1, buffer2,
       Ptr<u8>((heap->current + 0x3f).offset & 0xffffffc0));  // 64-byte aligned for IOP DMA
@@ -269,6 +289,10 @@ void load_and_link_dgo_from_c(const char* name,
 
     // inform IOP we are done
     if (!lastObjectLoaded) {
+#if defined(__APPLE__) && defined(__aarch64__)
+      jit_memory::make_writable(buffer1.c(), static_cast<size_t>(bufferSize));
+      jit_memory::make_writable(buffer2.c(), static_cast<size_t>(bufferSize));
+#endif
       ContinueLoadingDGO(buffer1, buffer2, Ptr<u8>((heap->current + 0x3f).offset & 0xffffffc0));
     }
   }

@@ -15,8 +15,39 @@ emitter::Register Compiler::parse_register(const goos::Object& code) {
   }
 
   auto nas = code.as_symbol();
+  const auto register_name = std::string_view(nas.name_ptr);
+
+  // Context-switch assembly needs names for the target's actual callee-saved
+  // registers.  The historical GOAL source used rbx/rbp/r10/r11/r12 for
+  // this purpose, which is only a five-register set and cannot represent the
+  // seven saved GPRs used by the Apple ARM64 allocator (x19, x23..x28).
+  // Keep this role explicit and target-selected instead of scattering numeric
+  // ARM register ids through the kernel source.
+  constexpr std::string_view kSavedGprPrefix = "saved-gpr";
+  if (register_name.starts_with(kSavedGprPrefix)) {
+    const auto suffix = register_name.substr(kSavedGprPrefix.size());
+    if (suffix.empty()) {
+      throw_compiler_error(code, "Could not parse {} as a saved register name", code.print());
+    }
+
+    int saved_index = 0;
+    for (const char digit : suffix) {
+      if (digit < '0' || digit > '9') {
+        throw_compiler_error(code, "Could not parse {} as a saved register name", code.print());
+      }
+      saved_index = saved_index * 10 + (digit - '0');
+    }
+
+    const auto& register_info = emitter::get_register_info(m_instr_set);
+    if (saved_index >= static_cast<int>(register_info.get_saved_gprs().size())) {
+      throw_compiler_error(code, "Saved register {} is not available for this instruction set",
+                           code.print());
+    }
+    return register_info.get_saved_gpr(saved_index);
+  }
+
   for (int i = 0; i < 32; i++) {
-    if (std::string_view(nas.name_ptr) == reg_names[i]) {
+    if (register_name == reg_names[i]) {
       if (m_instr_set == emitter::InstructionSet::X86) {
         return emitter::Register(i);
       }
@@ -195,7 +226,8 @@ Val* Compiler::compile_asm_ret(const goos::Object& form, const goos::Object& res
     color = get_true_or_false(form, args.named.at("color"));
   }
 
-  env->emit_ir<IR_AsmRet>(form, color);
+  const bool returns_value = env->function_env()->asm_func_return_type != TypeSpec("none");
+  env->emit_ir<IR_AsmRet>(form, color, returns_value);
   return get_none();
 }
 

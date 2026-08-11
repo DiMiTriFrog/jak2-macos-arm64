@@ -16,7 +16,14 @@ constexpr u32 DEBUG_HEAP_SPACE_FOR_STACK = 0x10000;
 constexpr u32 HEAP_START = 0x13fd20;
 
 //! Where to end the global heap so it doesn't overlap with the stack.
+// ARM64 GOAL code and function objects need more global-heap space than the
+// x86-64 build. Keep the ARM64 heap below the debug heap, with one page of
+// separation, while preserving the existing x86-64 layout.
+#if defined(__APPLE__) && defined(__aarch64__)
+constexpr u32 GLOBAL_HEAP_END = 0x6ffc000;
+#else
 constexpr u32 GLOBAL_HEAP_END = 0x1ffc000 + (BIG_MEMORY ? (0x1ffc000 - HEAP_START) : 0);  // doubled
+#endif
 
 //! Location of kglobalheap, kdebugheap kheapinfo structures.
 constexpr u32 GLOBAL_HEAP_INFO_ADDR = 0x13AD00;
@@ -24,7 +31,11 @@ constexpr u32 DEBUG_HEAP_INFO_ADDR = 0x13AD10;
 constexpr u32 LINK_CONTROL_NAME_ADDR = 0x13AD80;
 
 //! Where to place the debug heap
+#if defined(__APPLE__) && defined(__aarch64__)
+constexpr u32 DEBUG_HEAP_START = 0x7000000;
+#else
 constexpr u32 DEBUG_HEAP_START = 0x5000000;
+#endif
 
 namespace jak2 {
 constexpr u32 DEBUG_HEAP_SIZE = 0x2f00000;

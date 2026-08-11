@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "common/goal_constants.h"
+#include "common/jit_memory.h"
 
 #include "game/kernel/common/kprint.h"
 #include "game/kernel/common/kscheme.h"
@@ -22,6 +23,33 @@ enum MemItemsCategory {
 int MemItemsCount[NUM_CATEGORIES] = {0, 0};
 int MemItemsSize[NUM_CATEGORIES] = {0, 0};
 
+#if defined(__APPLE__) && defined(__aarch64__)
+struct Arm64FunctionPool {
+  u32 heap_offset = 0;
+  u32 next = 0;
+  u32 end = 0;
+};
+
+constexpr size_t ARM64_FUNCTION_POOL_COUNT = 32;
+Arm64FunctionPool arm64_function_pools[ARM64_FUNCTION_POOL_COUNT];
+
+Arm64FunctionPool* get_arm64_function_pool(u32 heap_offset) {
+  Arm64FunctionPool* free_pool = nullptr;
+  for (auto& pool : arm64_function_pools) {
+    if (pool.heap_offset == heap_offset) {
+      return &pool;
+    }
+    if (!pool.heap_offset && !free_pool) {
+      free_pool = &pool;
+    }
+  }
+  if (free_pool) {
+    free_pool->heap_offset = heap_offset;
+  }
+  return free_pool;
+}
+#endif
+
 void kmalloc_init_globals_common() {
   // _globalheap and _debugheap
   kglobalheap.offset = GLOBAL_HEAP_INFO_ADDR;
@@ -31,6 +59,11 @@ void kmalloc_init_globals_common() {
     x = 0;
   for (auto& x : MemItemsSize)
     x = 0;
+#if defined(__APPLE__) && defined(__aarch64__)
+  for (auto& pool : arm64_function_pools) {
+    pool = {};
+  }
+#endif
 }
 
 /*!
@@ -129,6 +162,24 @@ u32 kheapused(Ptr<kheapinfo> heap) {
  */
 Ptr<u8> kmalloc(Ptr<kheapinfo> heap, s32 size, u32 flags, char const* name) {
   uint32_t alignment_flag = flags & 0xfff;
+#if defined(__APPLE__) && defined(__aarch64__)
+  const s32 requested_size = size;
+  const bool executable_allocation = (flags & KMALLOC_EXECUTABLE) != 0;
+#else
+  constexpr bool executable_allocation = false;
+#endif
+  uint32_t executable_page_size = 0;
+#if defined(__APPLE__) && defined(__aarch64__)
+  if (executable_allocation) {
+    executable_page_size = static_cast<uint32_t>(jit_memory::page_size());
+    if (size > 0) {
+      size = static_cast<s32>((static_cast<uint32_t>(size) + executable_page_size - 1) &
+                              ~(executable_page_size - 1));
+    }
+  }
+#else
+  (void)executable_allocation;
+#endif
 
   // if we got a null heap, put it on the global heap, but warn about it
   if (!heap.offset) {
@@ -140,9 +191,54 @@ Ptr<u8> kmalloc(Ptr<kheapinfo> heap, s32 size, u32 flags, char const* name) {
 
   uint32_t memstart;
 
+#if defined(__APPLE__) && defined(__aarch64__)
+  // C-backed GOAL functions are tiny executable objects. Keep their pages
+  // isolated from mutable heap data, but pack multiple objects into each page
+  // instead of charging one 16 KiB page per 0x40-byte trampoline.
+  if (executable_allocation && !(flags & KMALLOC_TOP) && requested_size > 0 &&
+      static_cast<uint32_t>(requested_size) < executable_page_size &&
+      strcmp(name, "function") == 0) {
+    auto* pool = get_arm64_function_pool(heap.offset);
+    if (!pool) {
+      MsgErr("kmalloc: no ARM64 function pool for heap %x\n", heap.offset);
+      return Ptr<u8>(0);
+    }
+
+    const u32 object_size = (static_cast<u32>(requested_size) + 0xf) & ~0xf;
+    // alloc_heap_object returns the address after the type tag, and the
+    // trampoline writer uses that address for the executable bytes. Reserve
+    // the tag too, so the JIT write range cannot cross into the next page.
+    const u32 allocation_size = object_size + BASIC_OFFSET;
+    if (!pool->next || pool->next + allocation_size > pool->end) {
+      auto page = kmalloc(heap, static_cast<s32>(executable_page_size), KMALLOC_EXECUTABLE,
+                          "function-page");
+      if (!page.offset) {
+        return page;
+      }
+      pool->next = page.offset;
+      pool->end = page.offset + executable_page_size;
+    }
+
+    memstart = pool->next;
+    pool->next += allocation_size;
+    jit_memory::make_writable(Ptr<u8>(memstart).c(), allocation_size);
+    if (flags & KMALLOC_MEMSET) {
+      std::memset(Ptr<u8>(memstart).c(), 0, allocation_size);
+    }
+    return Ptr<u8>(memstart);
+  }
+#endif
+
   if (!(flags & KMALLOC_TOP)) {
     // allocate from bottom
-    if (alignment_flag == KMALLOC_ALIGN_64)
+    if (executable_allocation) {
+#if defined(__APPLE__) && defined(__aarch64__)
+      memstart = (heap->current.offset + executable_page_size - 1) &
+                 ~(executable_page_size - 1);
+#else
+      memstart = heap->current.offset;
+#endif
+    } else if (alignment_flag == KMALLOC_ALIGN_64)
       memstart = (0xffffffc0 & (heap->current.offset + 0x40 - 1));
     else if (alignment_flag == KMALLOC_ALIGN_256)
       memstart = (0xffffff00 & (heap->current.offset + 0x100 - 1));
@@ -162,6 +258,14 @@ Ptr<u8> kmalloc(Ptr<kheapinfo> heap, s32 size, u32 flags, char const* name) {
       return Ptr<u8>(0);
     }
 
+#if defined(__APPLE__) && defined(__aarch64__)
+    // A bottom allocation may reach a page previously used by a temporary
+    // top-level segment after that segment's top pointer is reset. Restore RW
+    // before the caller fills the allocation or clears it. Executable
+    // allocations are page-aligned and reserve complete pages, so this cannot
+    // overlap a persistent executable allocation.
+    jit_memory::make_writable(Ptr<u8>(memstart).c(), static_cast<size_t>(size));
+#endif
     heap->current.offset = memend;
     if (flags & KMALLOC_MEMSET)
       std::memset(Ptr<u8>(memstart).c(), 0, (size_t)size);
@@ -172,7 +276,15 @@ Ptr<u8> kmalloc(Ptr<kheapinfo> heap, s32 size, u32 flags, char const* name) {
       alignment_flag = KMALLOC_ALIGN_16;
     }
 
-    memstart = (heap->top.offset - size) & (-alignment_flag);
+    if (executable_allocation) {
+#if defined(__APPLE__) && defined(__aarch64__)
+      memstart = (heap->top.offset - size) & ~(executable_page_size - 1);
+#else
+      memstart = heap->top.offset - size;
+#endif
+    } else {
+      memstart = (heap->top.offset - size) & (-alignment_flag);
+    }
 
     if (size == 0) {
       Msg(6, "[WARNING] kmalloc : size 0 allocation from top\n");
@@ -185,6 +297,12 @@ Ptr<u8> kmalloc(Ptr<kheapinfo> heap, s32 size, u32 flags, char const* name) {
       return Ptr<u8>(0);
     }
 
+#if defined(__APPLE__) && defined(__aarch64__)
+    // Top-level code is temporary.  Once its RX pages are returned to the
+    // top allocator, a later mutable allocation may reuse them; restore RW
+    // before the caller fills the allocation or clears it.
+    jit_memory::make_writable(Ptr<u8>(memstart).c(), static_cast<size_t>(size));
+#endif
     heap->top.offset = memstart;
 
     if (flags & KMALLOC_MEMSET)

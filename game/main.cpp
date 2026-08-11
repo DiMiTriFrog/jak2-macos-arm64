@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
   app.add_flag("--version", show_version, "Display the built revision");
   app.add_option("-g,--game", game_name, "The game name: 'jak1' or 'jak2'");
   app.add_flag("-v,--verbose", verbose_logging, "Enable verbose logging on stdout");
-  app.add_flag(
+  app.add_option(
       "--port", port_number,
       "Specify port number for listener connection (default is 8112 for Jak 1 and 8113 for Jak 2)");
   app.add_flag("--no-avx2", disable_avx2, "Disable AVX2 for testing");
@@ -178,12 +178,21 @@ int main(int argc, char** argv) {
   game_options.server_port =
       port_number == -1 ? DECI2_PORT - 1 + (int)game_options.game_version : port_number;
 
+#if defined(__APPLE__) && defined(__aarch64__)
+  if (is_process_translated()) {
+    lg::error("Refusing to run translated under Rosetta; native arm64 is required.");
+    return 1;
+  }
+#endif
+
   // Figure out if the CPU has AVX2 to enable higher performance AVX2 versions of functions.
   setup_cpu_info();
+  // AVX is required by the x86-64 GOAL backend, but is not an ARM64 feature.
+#if defined(__aarch64__)
+  lg::info("Native ARM64 runtime selected; x86 AVX checks are not applicable.");
+#else
   // If the CPU doesn't have AVX, GOAL code won't work and we exit.
   if (!get_cpu_info().has_avx) {
-// Check if we are on a modern enough version of macOS so that AVX can be
-// emulated via rosetta
 #ifdef __APPLE__
     auto macos_major_version = get_macos_major_version();
     if (macos_major_version < 15.0) {
@@ -203,6 +212,7 @@ int main(int argc, char** argv) {
     return -1;
 #endif
   }
+#endif
 
   // set up file paths for resources. This is the full repository when developing, and the data
   // directory (a subset of the full repo) in release versions

@@ -248,6 +248,14 @@ fs::path get_jak_project_dir() {
   return g_file_path_info.path_to_data_folder;
 }
 
+fs::path get_game_output_dir(GameVersion game_version) {
+  auto output_name = std::string(game_version_names[game_version]);
+#if defined(__APPLE__) && defined(__aarch64__)
+  output_name += "-arm64";
+#endif
+  return get_jak_project_dir() / "out" / output_name;
+}
+
 fs::path get_iso_dir_for_game(GameVersion game_version) {
   if (!g_iso_data_directory.empty()) {
     return g_iso_data_directory;

@@ -67,6 +67,8 @@ struct link_control {
 
   bool m_opengoal;
   bool m_busy;  // only in jak2, but doesn't hurt to set it in jak 1.
+  LinkStatus m_status = LinkStatus::Failed;
+  Ptr<uint8_t> m_heap_current;  //! bottom cursor to restore if this link fails
 
   // jak 3 new stuff
   bool m_on_global_heap = false;
@@ -95,15 +97,15 @@ struct link_control {
 
   // was originally "work"
   uint32_t jak1_work();
-  uint32_t jak2_work();
+  LinkStatus jak2_work();
   uint32_t jak3_work();
   uint32_t jakx_work();
 
   uint32_t jak1_work_v3();
   uint32_t jak1_work_v2();
 
-  uint32_t jak2_work_v3();
-  uint32_t jak2_work_v2();
+  LinkStatus jak2_work_v3();
+  LinkStatus jak2_work_v2();
 
   uint32_t jak3_work_v2_v4();
   uint32_t jak3_work_v5();
@@ -116,6 +118,10 @@ struct link_control {
   void jak2_finish(bool jump_from_c_to_goal);
   void jak3_finish(bool jump_from_c_to_goal);
   void jakx_finish(bool jump_from_c_to_goal);
+
+  // Abort an incremental link without running finish/login code. This also
+  // restores both linear-allocator cursors to their begin() values.
+  void fail();
 
   void reset() {
     m_object_data.offset = 0;
@@ -133,6 +139,8 @@ struct link_control {
     m_segment_process = 0;
     m_version = 0;
     m_busy = false;
+    m_status = LinkStatus::Failed;
+    m_heap_current.offset = 0;
   }
 };
 

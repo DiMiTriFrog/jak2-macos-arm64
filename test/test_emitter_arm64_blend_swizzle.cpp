@@ -274,3 +274,70 @@ TEST(ARM64EmitterSplat, Encoding) {
   // DUP <Vd>.4S, <Vn>.S[3] -> 0x4E1C0420
   EXPECT_EQ(t2.dump_to_hex_string(), "20 04 1c 4e");
 }
+
+TEST(ARM64EmitterSplat, VectorCspaceSequence) {
+#if defined(__aarch64__)
+  // Reproduce the exact register assignment used by vector<-cspace! in the
+  // Jak 2 title camera: v6 is vf0, v5 is the homogeneous translation, v7 is Q,
+  // and v4 is the denominator temporary.
+  V128 one = float4(1.0f, 1.0f, 1.0f, 1.0f);
+  V128 raw = float4(3929102.25f, -204851.640625f, 1469002.5f, 3.0f);
+
+  CodeTester numerator(InstructionSet::ARM64);
+  numerator.init_code_buffer(256);
+  numerator.emit(ins_vf_d_gpr(V6, 0, X0));
+  numerator.emit(ins_vf_d_gpr(V6, 1, X1));
+  numerator.emit(splat_vf(V7, V6, Register::VF_ELEMENT::W));
+  numerator.emit(umov_gpr64_vf_d(X0, V7, 0));
+  numerator.emit_return();
+  EXPECT_EQ(numerator.execute(one.lo, one.hi, 0, 0), one.lo);
+
+  CodeTester denominator(InstructionSet::ARM64);
+  denominator.init_code_buffer(256);
+  denominator.emit(ins_vf_d_gpr(V5, 0, X2));
+  denominator.emit(ins_vf_d_gpr(V5, 1, X3));
+  denominator.emit(splat_vf(V4, V5, Register::VF_ELEMENT::W));
+  denominator.emit(umov_gpr64_vf_d(X0, V4, 0));
+  denominator.emit_return();
+  V128 three = float4(3.0f, 3.0f, 3.0f, 3.0f);
+  EXPECT_EQ(denominator.execute(0, 0, raw.lo, raw.hi), three.lo);
+
+  auto run_cspace_stage = [&](bool after_div, bool return_denominator) {
+    CodeTester stage(InstructionSet::ARM64);
+    stage.init_code_buffer(512);
+    stage.emit(ins_vf_d_gpr(V6, 0, X0));
+    stage.emit(ins_vf_d_gpr(V6, 1, X1));
+    stage.emit(ins_vf_d_gpr(V5, 0, X2));
+    stage.emit(ins_vf_d_gpr(V5, 1, X3));
+    stage.emit(splat_vf(V7, V6, Register::VF_ELEMENT::W));
+    stage.emit(splat_vf(V4, V5, Register::VF_ELEMENT::W));
+    if (after_div) {
+      stage.emit(div_vf(V7, V7, V4));
+    }
+    stage.emit(umov_gpr64_vf_d(X0, return_denominator ? V4 : V7, 0));
+    stage.emit_return();
+    return stage.execute(one.lo, one.hi, raw.lo, raw.hi);
+  };
+  EXPECT_EQ(run_cspace_stage(false, false), one.lo);
+  EXPECT_EQ(run_cspace_stage(false, true), three.lo);
+  V128 third = float4(1.0f / 3.0f, 1.0f / 3.0f, 1.0f / 3.0f, 1.0f / 3.0f);
+  EXPECT_EQ(run_cspace_stage(true, false), third.lo);
+
+  CodeTester t(InstructionSet::ARM64);
+  t.init_code_buffer(512);
+  t.emit(ins_vf_d_gpr(V6, 0, X0));
+  t.emit(ins_vf_d_gpr(V6, 1, X1));
+  t.emit(ins_vf_d_gpr(V5, 0, X2));
+  t.emit(ins_vf_d_gpr(V5, 1, X3));
+  t.emit(splat_vf(V7, V6, Register::VF_ELEMENT::W));
+  t.emit(splat_vf(V4, V5, Register::VF_ELEMENT::W));
+  t.emit(div_vf(V7, V7, V4));
+  t.emit(mul_vf(V7, V5, V7));
+  t.emit(umov_gpr64_vf_d(X0, V7, 0));
+  t.emit_return();
+
+  V128 expected = float4(lane_f32(raw, 0) / 3.0f, lane_f32(raw, 1) / 3.0f,
+                         lane_f32(raw, 2) / 3.0f, 1.0f);
+  EXPECT_EQ(t.execute(one.lo, one.hi, raw.lo, raw.hi), expected.lo);
+#endif
+}

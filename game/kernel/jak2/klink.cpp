@@ -21,7 +21,11 @@ static constexpr bool link_debug_printfs = false;
 /*!
  * Make progress on linking.
  */
-uint32_t link_control::jak2_work() {
+LinkStatus link_control::jak2_work() {
+  if (m_status == LinkStatus::Failed || m_status == LinkStatus::Complete) {
+    return m_status;
+  }
+
   auto old_debug_segment = DebugSegment;
   if (m_keep_debug) {
     DebugSegment = s7.offset + true_symbol_offset(g_game_version);
@@ -31,7 +35,7 @@ uint32_t link_control::jak2_work() {
   *((m_link_block_ptr - 4).cast<u32>()) =
       *((s7 + jak2_symbols::FIX_SYM_LINK_BLOCK - 1).cast<u32>());
 
-  uint32_t rv;
+  LinkStatus rv;
 
   if (m_version == 3) {
     ASSERT(m_opengoal);
@@ -41,11 +45,13 @@ uint32_t link_control::jak2_work() {
     rv = jak2_work_v2();
   } else {
     ASSERT_MSG(false, fmt::format("UNHANDLED OBJECT FILE VERSION {} IN WORK!", m_version));
-    return 0;
+    fail();
+    return LinkStatus::Failed;
   }
 
   DebugSegment = old_debug_segment;
-  return rv;
+  m_status = rv;
+  return m_status;
 }
 
 namespace {
@@ -190,7 +196,7 @@ uint32_t symlink_v3(Ptr<uint8_t> link, Ptr<uint8_t> data) {
  * Run the linker. For now, all linking is done in two runs.  If this turns out to be too slow,
  * this should be modified to do incremental linking over multiple runs.
  */
-uint32_t link_control::jak2_work_v3() {
+LinkStatus link_control::jak2_work_v3() {
   ObjectFileHeader* ofh = m_link_block_ptr.cast<ObjectFileHeader>().c();
   if (m_state == 0) {
     // state 0 <- copying data.
@@ -215,11 +221,14 @@ uint32_t link_control::jak2_work_v3() {
           } else {
             Ptr<u8> src(ofh->code_infos[seg_id].offset);
             ofh->code_infos[seg_id].offset =
-                kmalloc(kdebugheap, ofh->code_infos[seg_id].size, 0, "debug-segment").offset;
+                kmalloc(kdebugheap, ofh->code_infos[seg_id].size, KMALLOC_EXECUTABLE,
+                        "debug-segment")
+                    .offset;
             if (ofh->code_infos[seg_id].offset == 0) {
               MsgErr("dkernel: unable to malloc %d bytes for debug-segment\n",
                      ofh->code_infos[seg_id].size);
-              return 1;
+              fail();
+              return LinkStatus::Failed;
             }
             jak2::ultimate_memcpy(Ptr<u8>(ofh->code_infos[seg_id].offset).c(), src.c(),
                                   ofh->code_infos[seg_id].size);
@@ -231,11 +240,13 @@ uint32_t link_control::jak2_work_v3() {
         } else {
           Ptr<u8> src(ofh->code_infos[seg_id].offset);
           ofh->code_infos[seg_id].offset =
-              kmalloc(m_heap, ofh->code_infos[seg_id].size, 0, "main-segment").offset;
+              kmalloc(m_heap, ofh->code_infos[seg_id].size, KMALLOC_EXECUTABLE, "main-segment")
+                  .offset;
           if (ofh->code_infos[seg_id].offset == 0) {
             MsgErr("dkernel: unable to malloc %d bytes for main-segment\n",
                    ofh->code_infos[seg_id].size);
-            return 1;
+            fail();
+            return LinkStatus::Failed;
           }
           jak2::ultimate_memcpy(Ptr<u8>(ofh->code_infos[seg_id].offset).c(), src.c(),
                                 ofh->code_infos[seg_id].size);
@@ -245,13 +256,16 @@ uint32_t link_control::jak2_work_v3() {
           ofh->code_infos[seg_id].offset = 0;
         } else {
           Ptr<u8> src(ofh->code_infos[seg_id].offset);
+          constexpr u32 top_level_flags = KMALLOC_TOP | KMALLOC_EXECUTABLE;
           ofh->code_infos[seg_id].offset =
-              kmalloc(m_heap, ofh->code_infos[seg_id].size, KMALLOC_TOP, "top-level-segment")
+              kmalloc(m_heap, ofh->code_infos[seg_id].size, top_level_flags,
+                      "top-level-segment")
                   .offset;
           if (ofh->code_infos[seg_id].offset == 0) {
             MsgErr("dkernel: unable to malloc %d bytes for top-level-segment\n",
                    ofh->code_infos[seg_id].size);
-            return 1;
+            fail();
+            return LinkStatus::Failed;
           }
           jak2::ultimate_memcpy(Ptr<u8>(ofh->code_infos[seg_id].offset).c(), src.c(),
                                 ofh->code_infos[seg_id].size);
@@ -263,7 +277,7 @@ uint32_t link_control::jak2_work_v3() {
 
     m_state = 1;
     m_segment_process = 0;
-    return 0;
+    return LinkStatus::InProgress;
   } else if (m_state == 1) {
     // state 1: linking. For now all links are done at once. This is probably going to be fine on a
     // modern computer.  But the game broke this into multiple steps.
@@ -306,15 +320,16 @@ uint32_t link_control::jak2_work_v3() {
     } else {
       // all done, can set the entry point to the top-level.
       m_entry = Ptr<u8>(ofh->code_infos[TOP_LEVEL_SEGMENT].offset) + 4;
-      return 1;
+      return LinkStatus::Complete;
     }
 
-    return 0;
+    return LinkStatus::InProgress;
   }
 
   else {
     printf("WORK v3 INVALID STATE\n");
-    return 1;
+    fail();
+    return LinkStatus::Failed;
   }
 }
 
@@ -324,7 +339,7 @@ uint32_t link_control::jak2_work_v3() {
 #define OBJ_V2_CLOSE_ENOUGH 0x90
 #define OBJ_V2_MAX_TRANSFER 0x80000
 
-uint32_t link_control::jak2_work_v2() {
+LinkStatus link_control::jak2_work_v2() {
   //  u32 startCycle = kernel.read_clock(); todo
 
   if (m_state == LINK_V2_STATE_INIT_COPY) {  // initialization and copying to heap
@@ -347,7 +362,8 @@ uint32_t link_control::jak2_work_v2() {
       m_heap->current = m_object_data + m_code_size;
       if (m_heap->top.offset <= m_heap->current.offset) {
         MsgErr("dkernel: heap overflow\n");  // game has ~% instead of \n :P
-        return 1;
+        fail();
+        return LinkStatus::Failed;
       }
 
       // added in jak 2, move the link block to the top of the heap so we can allocate on
@@ -369,7 +385,8 @@ uint32_t link_control::jak2_work_v2() {
         }
         if (!m_object_data.offset) {
           MsgErr("dkernel: unable to malloc %d bytes for data-segment\n", m_code_size);
-          return 1;
+          fail();
+          return LinkStatus::Failed;
         }
       }
 
@@ -381,7 +398,7 @@ uint32_t link_control::jak2_work_v2() {
         jak2::ultimate_memcpy((m_object_data + m_segment_process).c(), source.c(),
                               OBJ_V2_MAX_TRANSFER);
         m_segment_process += OBJ_V2_MAX_TRANSFER;
-        return 0;  // return, don't want to take too long.
+        return LinkStatus::InProgress;  // return, don't want to take too long.
       }
 
       // if we have bytes to copy, but they are less than the max transfer, do it in one shot!
@@ -390,7 +407,7 @@ uint32_t link_control::jak2_work_v2() {
         if (m_segment_process > 0) {  // if we did a previous copy, we return now....
           m_state = LINK_V2_STATE_OFFSETS;
           m_segment_process = 0;
-          return 0;
+          return LinkStatus::InProgress;
         }
       }
     }
@@ -526,7 +543,7 @@ uint32_t link_control::jak2_work_v2() {
     }
   }
   m_entry = m_object_data + 4;
-  return 1;
+  return LinkStatus::Complete;
 }
 
 /*!
@@ -540,11 +557,29 @@ void link_control::jak2_finish(bool jump_from_c_to_goal) {
     for (u32 segment = 0; segment < ofh->segment_count; ++segment) {
       const auto& code = ofh->code_infos[segment];
       if (code.offset && code.size) {
-        jit_memory::make_executable(Ptr<u8>(code.offset).c(), code.size);
+        size_t executable_size = code.size;
+#if defined(__APPLE__) && defined(__aarch64__)
+        const u32 link_metadata = ofh->link_infos[segment].size;
+        if (link_metadata & LINK_ARM64_EXECUTABLE_SIZE_FLAG) {
+          executable_size = link_metadata & ~LINK_ARM64_EXECUTABLE_SIZE_FLAG;
+        }
+#endif
+        if (executable_size) {
+          jit_memory::make_executable(Ptr<u8>(code.offset).c(), executable_size);
+        }
       }
     }
   } else {
+#if defined(__APPLE__) && defined(__aarch64__)
+    // Legacy v2/v4 objects are relocated by GOAL after they are copied into
+    // the heap. Keep their code range writable until that relocation method
+    // has finished; x86 does not require this transition.
+    if (m_code_size) {
+      jit_memory::make_writable(m_code_start.c(), m_code_size);
+    }
+#else
     CacheFlush(m_code_start.c(), m_code_size);
+#endif
   }
   auto old_debug_segment = DebugSegment;
   if (m_keep_debug) {
@@ -571,7 +606,11 @@ void link_control::jak2_finish(bool jump_from_c_to_goal) {
     // execute top level!
     if (m_entry.offset && (m_flags & LINK_FLAG_EXECUTE)) {
       if (jump_from_c_to_goal) {
+#if defined(__aarch64__)
+        u64 goal_stack = u64(g_ee_main_mem) + EE_MAIN_MEM_SIZE - 16;
+#else
         u64 goal_stack = u64(g_ee_main_mem) + EE_MAIN_MEM_SIZE - 8;
+#endif
         call_goal_on_stack(m_entry.cast<Function>(), goal_stack, s7.offset, g_ee_main_mem);
       } else {
         call_goal(m_entry.cast<Function>(), 0, 0, 0, s7.offset, g_ee_main_mem);
@@ -591,6 +630,9 @@ void link_control::jak2_finish(bool jump_from_c_to_goal) {
                                      GOAL_RELOC_METHOD, m_heap.offset,
                                      Ptr<char>(LINK_CONTROL_NAME_ADDR).offset);
     }
+    // Legacy v2/v4 objects from the DVD contain PS2 data and relocation
+    // records, not ARM64 code. Their pages may also share a 16 KiB page with
+    // mutable GOAL objects, so do not restore an executable protection here.
   }
 
   *EnableMethodSet = *EnableMethodSet - m_keep_debug;
@@ -606,8 +648,9 @@ u32 link_busy() {
 }
 
 void link_reset() {
-  // seems like a bad idea to do this - you'll probably leak memory.
-  saved_link_control.m_busy = 0;
+  if (saved_link_control.m_busy) {
+    saved_link_control.fail();
+  }
 }
 
 Ptr<uint8_t> link_and_exec(Ptr<uint8_t> data,
@@ -622,10 +665,13 @@ Ptr<uint8_t> link_and_exec(Ptr<uint8_t> data,
   }
   link_control lc;
   lc.jak1_jak2_begin(data, name, size, heap, flags);
-  uint32_t done;
+  LinkStatus status;
   do {
-    done = lc.jak2_work();
-  } while (!done);
+    status = lc.jak2_work();
+  } while (status == LinkStatus::InProgress);
+  if (status != LinkStatus::Complete) {
+    return Ptr<uint8_t>(0);
+  }
   lc.jak2_finish(jump_from_c_to_goal);
   return lc.m_entry;
 }
@@ -650,13 +696,14 @@ uint64_t link_begin(u64* args) {
   saved_link_control.jak1_jak2_begin(Ptr<u8>(args[0]), Ptr<char>(args[1]).c(), args[2],
                                      Ptr<kheapinfo>(args[3]), args[4]);
   auto work_result = saved_link_control.jak2_work();
-  // if we managed to finish in one shot, take care of calling finish
-  if (work_result) {
+  // Only Complete may enter finish/login code. InProgress remains owned by
+  // the saved linker and Failed has already restored the heap cursors.
+  if (work_result == LinkStatus::Complete) {
     // called from goal
     saved_link_control.jak2_finish(false);
   }
 
-  return work_result != 0;
+  return static_cast<uint32_t>(work_result);
 }
 
 /*!
@@ -664,11 +711,11 @@ uint64_t link_begin(u64* args) {
  */
 uint64_t link_resume() {
   auto work_result = saved_link_control.jak2_work();
-  if (work_result) {
+  if (work_result == LinkStatus::Complete) {
     // called from goal
     saved_link_control.jak2_finish(false);
   }
-  return work_result != 0;
+  return static_cast<uint32_t>(work_result);
 }
 
 /*!

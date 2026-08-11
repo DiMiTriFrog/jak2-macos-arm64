@@ -76,6 +76,20 @@ TEST(ARM64EmitterIntegerDivision, UnsignedEncoding) {
   EXPECT_EQ(tester.dump_to_hex_string(), "00 08 c1 1a 00 7c 40 93 c0 03 5f d6");
 }
 
+TEST(ARM64EmitterInteger, MovePreservesStackPointer) {
+#if defined(__aarch64__)
+  CodeTester tester(InstructionSet::ARM64);
+  tester.init_code_buffer(256);
+  // ORR/MOV interprets register 31 as XZR.  This sequence must preserve SP
+  // through both directions of the register move.
+  tester.emit(IGen::mov_gpr64_gpr64(tester.generator(), X0, SP));
+  tester.emit(IGen::mov_gpr64_gpr64(tester.generator(), SP, X0));
+  tester.emit(IGen::mov_gpr64_gpr64(tester.generator(), X0, SP));
+  tester.emit_return();
+  EXPECT_NE(tester.execute(0, 0, 0, 0), 0u);
+#endif
+}
+
 TEST(ARM64EmitterIntegerDivision, SignedQuotient) {
   CodeTester tester(InstructionSet::ARM64);
   tester.init_code_buffer(256);

@@ -351,7 +351,7 @@ TEST(ARM64Function, AsmFunctionKeepsExplicitReturnContract) {
   fn->is_asm_func = true;
   fn->asm_func_return_type = generated.ts.make_typespec("none");
   auto form = empty_form();
-  fn->emit_ir<IR_AsmRet>(form, false);
+  fn->emit_ir<IR_AsmRet>(form, false, false);
   fn->finish();
   generated.add_function(std::move(fn));
 
@@ -373,7 +373,7 @@ TEST(ARM64Function, AsmFunctionRejectsImplicitSavedRegisterUse) {
   allocation.stack_ops.resize(1);
   fn->set_allocations(std::move(allocation));
   auto form = empty_form();
-  fn->emit_ir<IR_AsmRet>(form, false);
+  fn->emit_ir<IR_AsmRet>(form, false, false);
   fn->finish();
   generated.add_function(std::move(fn));
 

@@ -11,6 +11,7 @@ void save_pc_data(const std::string& nickname,
   print_memory_usage(data, ser.get_save_result().second);
   lg::print("compressed: {} -> {} ({:.2f}%)\n", ser.get_save_result().second, compressed.size(),
             100.f * compressed.size() / ser.get_save_result().second);
+  file_util::create_dir_if_needed(fr3_output_dir);
   file_util::write_binary_file(fr3_output_dir / fmt::format("{}.fr3", nickname), compressed.data(),
                                compressed.size());
 }

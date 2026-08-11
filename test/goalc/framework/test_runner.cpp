@@ -120,6 +120,7 @@ void runtime_no_kernel_jak2() {
   GameLaunchOptions game_options;
   game_options.disable_display = true;
   game_options.game_version = GameVersion::Jak2;
+  game_options.server_port = DECI2_PORT - 1 + static_cast<int>(game_options.game_version);
   exec_runtime(game_options, argc, argv);
 }
 
@@ -137,6 +138,7 @@ void runtime_with_kernel_jak2() {
   GameLaunchOptions game_options;
   game_options.disable_display = true;
   game_options.game_version = GameVersion::Jak2;
+  game_options.server_port = DECI2_PORT - 1 + static_cast<int>(game_options.game_version);
   exec_runtime(game_options, argc, argv);
 }
 
@@ -146,6 +148,7 @@ void runtime_with_kernel_jak3() {
   GameLaunchOptions game_options;
   game_options.disable_display = true;
   game_options.game_version = GameVersion::Jak3;
+  game_options.server_port = DECI2_PORT - 1 + static_cast<int>(game_options.game_version);
   exec_runtime(game_options, argc, argv);
 }
 

@@ -11,13 +11,11 @@ using u64 = uint64_t;
 
 extern "C" __attribute__((naked)) u64 test_invoke_arg_call_arm64(void*, u64, u64, u64, u64) {
   asm("stp x29, x30, [sp, #-16]!\n"
-      "mov x9, x0\n"
+      "mov x16, x0\n"
       "mov x0, x1\n"
       "mov x1, x2\n"
       "mov x2, x3\n"
       "mov x3, x4\n"
-      "sub sp, sp, #16\n"
-      "str x9, [sp]\n"
       "bl _arg_call_arm64\n"
       "ldp x29, x30, [sp], #16\n"
       "ret\n");
@@ -25,13 +23,11 @@ extern "C" __attribute__((naked)) u64 test_invoke_arg_call_arm64(void*, u64, u64
 
 extern "C" __attribute__((naked)) u64 test_invoke_stack_call_arm64(void*, u64, u64, u64, u64) {
   asm("stp x29, x30, [sp, #-16]!\n"
-      "mov x9, x0\n"
+      "mov x16, x0\n"
       "mov x0, x1\n"
       "mov x1, x2\n"
       "mov x2, x3\n"
       "mov x3, x4\n"
-      "sub sp, sp, #16\n"
-      "str x9, [sp]\n"
       "bl _stack_call_arm64\n"
       "ldp x29, x30, [sp], #16\n"
       "ret\n");
@@ -50,9 +46,8 @@ extern "C" __attribute__((naked)) u64 test_invoke_mips2c_call_arm64(void*, u64, 
       "mov x5, #0\n"
       "mov x6, #0\n"
       "mov x7, #0\n"
-      "sub sp, sp, #16\n"
-      "str x8, [sp]\n"
-      "str x9, [sp, #8]\n"
+      "mov x17, x8\n"
+      "mov x16, x9\n"
       "bl _mips2c_call_arm64\n"
       "ldp x29, x30, [sp], #16\n"
       "ret\n");
@@ -201,8 +196,7 @@ extern "C" __attribute__((naked)) u64 test_arg_call_preserves_sentinels_arm64(vo
       "mov x1, #2\n"
       "mov x2, #3\n"
       "mov x3, #4\n"
-      "sub sp, sp, #16\n"
-      "str x9, [sp]\n"
+      "mov x16, x9\n"
       "bl _arg_call_arm64\n"
       "mov x10, #1\n"
       "mov x11, #0x1111\n"
@@ -293,8 +287,7 @@ extern "C" __attribute__((naked)) u64 test_stack_call_preserves_sentinels_arm64(
       "mov x5, #6\n"
       "mov x6, #7\n"
       "mov x7, #8\n"
-      "sub sp, sp, #16\n"
-      "str x9, [sp]\n"
+      "mov x16, x9\n"
       "bl _stack_call_arm64\n"
       "mov x10, #1\n"
       "mov x11, #0x1111\n"

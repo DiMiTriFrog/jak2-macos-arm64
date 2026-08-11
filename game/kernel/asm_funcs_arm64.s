@@ -14,12 +14,26 @@
 .global _arg_call_arm64
 .align 4
 _arg_call_arm64:
-  ;; ARM trampolines reserve one aligned 16-byte slot containing the target
-  ;; address at [sp]. Consume it before creating the bridge frame.
-  ldr x8, [sp]
-  add sp, sp, #16
+  ;; The generated trampoline keeps the target in x16.  This is important because
+  ;; GOAL's stack pointer is a virtual offset until this bridge converts it.
+  mov x8, x16
+  ;; GOAL code represents its stack pointer as an offset from the host memory
+  ;; base in x22. Convert it to a host address before touching it natively.
+  mov x9, sp
+  lsr x9, x9, #32
+  cbnz x9, .Larg_call_native_stack
+  add sp, sp, x22
+  mov x9, #1
+  b .Larg_call_save_frame
+.Larg_call_native_stack:
+  mov x9, #0
+.Larg_call_save_frame:
   stp	x29, x30, [sp, #-16]!
+  stp x19, x20, [sp, #-16]!
+  ;; Preserve the complete fixed GOAL context across the native call.
+  stp x21, x22, [sp, #-16]!
   mov	x29, sp
+  mov x19, x9
 
   ; Putting an exclamation point after the close-bracket 
   ; means that the calculated effective address is written back to the base register. (pre-indexing)
@@ -35,7 +49,14 @@ _arg_call_arm64:
   ldp q13, q12, [sp], #32
   ldp q15, q14, [sp], #32
 
+  mov x9, x19
+  ldp x21, x22, [sp], #16
+  ldp x19, x20, [sp], #16
   ldp	x29, x30, [sp], #16
+  ;; Restore the virtual GOAL stack pointer for the caller.
+  cbz x9, .Larg_call_return
+  sub sp, sp, x22
+.Larg_call_return:
   ret
 
 
@@ -48,30 +69,38 @@ _arg_call_arm64:
 .global _stack_call_arm64
 .align 4
 _stack_call_arm64:
-  ;; The target address is stored in an aligned 16-byte trampoline slot.
-  ldr x8, [sp]
-  add sp, sp, #16
-  stp	x29, x30, [sp, #-16]!
+  ;; The generated trampoline keeps the target in x16.  Do not touch the virtual
+  ;; GOAL stack until it has been converted below.
+  mov x8, x16
+  ;; The caller's SP is a GOAL offset; use a host address for this C bridge.
+  mov x9, sp
+  lsr x9, x9, #32
+  cbnz x9, .Lstack_call_native_stack
+  add sp, sp, x22
+  mov x9, #1
+  b .Lstack_call_save_frame
+.Lstack_call_native_stack:
+  mov x9, #0
+.Lstack_call_save_frame:
+	stp	x29, x30, [sp, #-16]!
+  stp x19, x20, [sp, #-16]!
+  ;; Preserve the complete fixed GOAL context across the native call.
+  stp x21, x22, [sp, #-16]!
   mov	x29, sp
+  mov x19, x9
 
   stp q15, q14, [sp, #-32]!
   stp q13, q12, [sp, #-32]!
   stp q11, q10, [sp, #-32]!
   stp q9, q8, [sp, #-32]!
 
-  ; create stack array of arguments
-  ; arg 7 (R11 in x86)
-  ; arg 6 (R10 in x86)
-  ; arg 5 (R8 in x86)
-  ; arg 4 (R8 in x86)
-  ; arg 3 (RCX in x86)
-  ; arg 2 (RDX in x86)
-  ; arg 1 (RSI in x86)
-  ; arg 0 (RDI in x86)
-  stp x7, x6, [sp, #-16]!
-  stp x5, x4, [sp, #-16]!
-  stp x3, x2, [sp, #-16]!
-  stp x1, x0, [sp, #-16]!
+  ; create a stack array of arguments in GOAL register order.
+  ; The C bridge expects args[0]..args[7] to correspond to x0..x7.
+  sub sp, sp, #64
+  stp x0, x1, [sp, #0]
+  stp x2, x3, [sp, #16]
+  stp x4, x5, [sp, #32]
+  stp x6, x7, [sp, #48]
 
   ; set first argument to the packed eight-word argument array
   mov x0, sp
@@ -80,10 +109,11 @@ _stack_call_arm64:
   ; Preserve the callee's return value while restoring the packed registers.
   mov x8, x0
   ; restore arguments
-  ldp x1, x0, [sp], #16
-  ldp x3, x2, [sp], #16
-  ldp x5, x4, [sp], #16
-  ldp x7, x6, [sp], #16
+  ldp x0, x1, [sp, #0]
+  ldp x2, x3, [sp, #16]
+  ldp x4, x5, [sp, #32]
+  ldp x6, x7, [sp, #48]
+  add sp, sp, #64
   mov x0, x8
 
   ldp q9, q8, [sp], #32
@@ -91,7 +121,14 @@ _stack_call_arm64:
   ldp q13, q12, [sp], #32
   ldp q15, q14, [sp], #32
 
+  mov x9, x19
+  ldp x21, x22, [sp], #16
+  ldp x19, x20, [sp], #16
   ldp	x29, x30, [sp], #16
+  ;; Return with the virtual GOAL stack pointer expected by generated code.
+  cbz x9, .Lstack_call_return
+  sub sp, sp, x22
+.Lstack_call_return:
   ; return!
   ret
 
@@ -101,12 +138,25 @@ _stack_call_arm64:
 .global _mips2c_call_arm64
 .align 4
 _mips2c_call_arm64:
-  stp	x29, x30, [sp, #-16]!
+  ;; The trampoline passes stack size in x17 and execution address in x16. Convert
+  ;; SP before the native frame prologue; x22 is restored unchanged for the callee.
+  mov x10, sp
+  lsr x10, x10, #32
+  cbnz x10, .Lmips2c_native_stack
+  add sp, sp, x22
+  mov x10, #1
+  b .Lmips2c_save_frame
+.Lmips2c_native_stack:
+  mov x10, #0
+.Lmips2c_save_frame:
+	stp	x29, x30, [sp, #-16]!
+  stp x19, x20, [sp, #-16]!
+  ;; Preserve the complete fixed GOAL context across the native call.
+  stp x21, x22, [sp, #-16]!
   mov	x29, sp
-  ;; ARM trampolines reserve an aligned pair: stack size at [sp+16] and
-  ;; execution address at [sp+24] after the frame is installed.
-  ldr x8, [sp, #+16]
-  ldr x9, [sp, #+24]
+  mov x19, x10
+  mov x8, x17
+  mov x9, x16
 
   ;; first, save quadword registers
   stp q15, q14, [sp, #-32]!
@@ -156,8 +206,14 @@ _mips2c_call_arm64:
   ldp q13, q12, [sp], #32
   ldp q15, q14, [sp], #32
 
+  mov x10, x19
+  ldp x21, x22, [sp], #16
+  ldp x19, x20, [sp], #16
   ldp	x29, x30, [sp], #16
-  add sp, sp, #16 ;; discard the trampoline's size/address pair
+  ;; Restore the virtual GOAL stack pointer before returning to GOAL.
+  cbz x10, .Lmips2c_return
+  sub sp, sp, x22
+.Lmips2c_return:
   ret
 
 ;; The _call_goal_asm function is used to call a GOAL function from C.

@@ -75,7 +75,7 @@ TEST(RegisterInfoARM64, ArgumentsAndReturn) {
 TEST(RegisterInfoARM64, SavedRegisters) {
   const auto& ri = emitter::get_register_info(emitter::InstructionSet::ARM64);
   EXPECT_EQ(ri.get_saved_gpr(0).id(), emitter::X19);
-  EXPECT_EQ(ri.get_saved_gpr(9).id(), emitter::X28);
+  EXPECT_EQ(ri.get_saved_gpr(6).id(), emitter::X28);
   EXPECT_EQ(ri.get_saved_xmm(0).id(), emitter::V8);
   EXPECT_EQ(ri.get_saved_xmm(7).id(), emitter::V15);
   // x29 is ABI callee-saved but deliberately not in the GOAL save/restore set.
@@ -84,6 +84,22 @@ TEST(RegisterInfoARM64, SavedRegisters) {
     EXPECT_NE(r.id(), emitter::X30);
     EXPECT_NE(r.id(), emitter::SP);
   }
+}
+
+TEST(RegisterInfoARM64, SavedSimdExcludedFromSuspendableAllocation) {
+  const auto& ri = emitter::get_register_info(emitter::InstructionSet::ARM64);
+  for (int saved_simd = emitter::V8; saved_simd <= emitter::V15; saved_simd++) {
+    for (const auto reg : ri.get_xmm_alloc_order()) {
+      EXPECT_NE(reg.id(), saved_simd);
+    }
+    for (const auto reg : ri.get_xmm_spill_alloc_order()) {
+      EXPECT_NE(reg.id(), saved_simd);
+    }
+  }
+  // The ABI description remains intact: these registers are reserved for
+  // explicit scalar kernel context handling, not repurposed as caller-saved.
+  EXPECT_TRUE(ri.get_simd_info(emitter::V8).saved);
+  EXPECT_TRUE(ri.get_simd_info(emitter::V15).saved);
 }
 
 TEST(RegisterInfoARM64, ReservedRegistersExcludedFromAllocation) {

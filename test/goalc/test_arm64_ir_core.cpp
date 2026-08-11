@@ -155,8 +155,9 @@ TEST(ARM64IRCore, RegSetSourceEqualsDest) {
   IR_RegSet ir(src.get(), src.get());
   ir.do_codegen_arm64(&h.gen, h.allocs, ir0);
   auto data = h.generate();
-  // source == dest: the move is eliminated, only the type tag remains.
-  EXPECT_EQ(data.size(), 4);
+  // source == dest: the move is eliminated to a valid ARM64 NOP.
+  EXPECT_EQ(data.size(), 8);
+  EXPECT_EQ(read_word(data, 4), 0xD503201Fu);
 #endif
 }
 

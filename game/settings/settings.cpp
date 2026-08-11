@@ -98,6 +98,15 @@ void DisplaySettings::load_settings() {
     // do nothing
     lg::error("Error encountered when attempting to load display settings {}", e.what());
   }
+#if defined(__APPLE__) && defined(__aarch64__)
+  // Older ARM64 development runs saved Borderless. Upgrade that persisted
+  // preference so a normal launch enters the macOS full-screen Space and can
+  // activate Apple Game Mode. x86-64 and explicit Fullscreen are unchanged.
+  if (display_mode == DisplaySettings::DisplayMode::Borderless) {
+    lg::info("[DISPLAY] ARM64 macOS: using native fullscreen for Apple Game Mode");
+    display_mode = DisplaySettings::DisplayMode::Fullscreen;
+  }
+#endif
 }
 
 void DisplaySettings::save_settings() {

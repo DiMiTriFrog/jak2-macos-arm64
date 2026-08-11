@@ -172,6 +172,17 @@
 (defmethod stack-size-set! ((this thread) (arg0 int))
   "Modify the backup stack size of a thread. Must be called from the main thread, before any
    allocations have been done on the process heap."
+  ;; Several Jak 2 actors intentionally request small backup stacks on x86.
+  ;; ARM64 generated calls have a larger aligned register-save footprint and
+  ;; need a wider floor before a process can suspend safely. 768 bytes also
+  ;; leaves room for the cpu-thread object in the smallest 1024-byte process
+  ;; heap used by the kernel tests. Keep x86 values unchanged.
+  (#if ARM64_TARGET
+    (when (< arg0 768)
+      (set! arg0 768)
+      )
+    #f
+    )
   (let ((a2-0 (-> this process)))
     (cond
       ((!= this (-> a2-0 main-thread))
@@ -198,6 +209,12 @@
   This is a special new method which ignores the allocation symbol.
   The stack-top is for the execution stack.
   The stack-size is for the backup stack (applicable for main thread only)"
+  (#if ARM64_TARGET
+    (when (< arg2 768)
+      (set! arg2 768)
+      )
+    #f
+    )
   (let ((v0-0 (cond
                 ((-> parent-process top-thread)
                  ;; this is just a temporary thread, throw the thread on the bottom of the stack
@@ -435,6 +452,17 @@
 ;; the following functions are used for going from the kernel to threads and back.
 ;; saved registers: rbx, rbp, r10, r11, r12
 
+;; The ARM64 allocator has seven saved GPRs (x19, x23..x28), while the
+;; historical GOAL register vocabulary exposes only five saved roles.  The
+;; context routines below keep the old roles for x86 and use explicit,
+;; target-selected aliases for the two additional ARM64 registers.
+(defmacro with-context-extra-saved-gprs (&rest body)
+  `(#if ARM64_TARGET
+    (rlet ((s5 :reg saved-gpr5 :type uint)
+           (s6 :reg saved-gpr6 :type uint))
+      ,@body)
+    ,@body))
+
 ;; DANGER - THE KERNEL DOES NOT SAVE ITS FLOATING POINT CONTEXT!!!!
 
 ;; we use this to store a GOAL pointer to the kernel's stack pointer when executing user code.
@@ -450,29 +478,50 @@
   (declare (asm-func none)
                                         ;(print-asm)
            )
-  (rlet ((sp :reg rsp :type uint)
+  (with-context-extra-saved-gprs
+    (rlet ((sp :reg rsp :type uint)
          (off :reg r15 :type uint)
-         (s0 :reg rbx :type uint)
-         (s1 :reg rbp :type uint)
-         (s2 :reg r10 :type uint)
-         (s3 :reg r11 :type uint)
-         (s4 :reg r12 :type uint)
+         (temp :reg rax :type uint)
+         ;; The historical GOAL rax role is ARM64 x8, whose .push/.pop
+         ;; lowering operates on x30. Use the historical r9 role for a real
+         ;; stack slot holding the kernel continuation.
+         (saved-lr :reg r9 :type uint)
+         (s0 :reg saved-gpr0 :type uint)
+         (s1 :reg saved-gpr1 :type uint)
+         (s2 :reg saved-gpr2 :type uint)
+         (s3 :reg saved-gpr3 :type uint)
+         (s4 :reg saved-gpr4 :type uint)
          )
     ;; get the kernel stack pointer as a GOAL pointer (won't use a temp reg)
     (.load-sym :sext #f sp *kernel-sp*)
     ;; convert it back to a real pointer
     (.add sp off)
 
+    ;; reset-and-call stores the kernel continuation immediately before the
+    ;; saved GOAL registers. Restore it into x30 before returning.
+    (.pop :color #f saved-lr)
+    (.mov :color #f temp saved-lr)
+    (.push :color #f temp)
+
     ;; restore saved registers...
     ;; without coloring system because this is "cheating" and modifying saved registers without backing up.
+    (#when ARM64_TARGET
+      (.pop :color #f s6)
+      (.pop :color #f s5))
     (.pop :color #f s4)
     (.pop :color #f s3)
     (.pop :color #f s2)
     (.pop :color #f s1)
     (.pop :color #f s0)
     ;; return to the kernel function that called the user code
-    ;; rax should still contain the return value.
-    (.ret)
+    ;; rax should still contain the return value. ARM64 jumps directly through
+    ;; the restored continuation; this avoids treating the link register as a
+    ;; stack-pushed GOAL return address after the context has been rebuilt.
+    (#if ARM64_TARGET
+      (.jr temp)
+      (.ret)
+      )
+      )
     )
   )
 
@@ -482,14 +531,20 @@
   (declare (asm-func none)
                                         ;(print-asm)
            )
-  (rlet ((pp :reg r13 :type process)
+  (with-context-extra-saved-gprs
+    (rlet ((pp :reg r13 :type process)
          (sp :reg rsp :type uint)
          (off :reg r15 :type uint)
-         (s0 :reg rbx :type uint)
-         (s1 :reg rbp :type uint)
-         (s2 :reg r10 :type uint)
-         (s3 :reg r11 :type uint)
-         (s4 :reg r12 :type uint)
+         (temp :reg rax :type uint)
+         ;; The historical GOAL r9 role maps to ARM64 x5 and is a real stack
+         ;; operand; the historical rax role maps to x8 and has special
+         ;; .push/.pop handling.
+         (saved-lr :reg r9 :type uint)
+         (s0 :reg saved-gpr0 :type uint)
+         (s1 :reg saved-gpr1 :type uint)
+         (s2 :reg saved-gpr2 :type uint)
+         (s3 :reg saved-gpr3 :type uint)
+         (s4 :reg saved-gpr4 :type uint)
          )
 
     ;; first call the deactivate method.
@@ -499,15 +554,28 @@
     ;; convert it back to a real pointer
     (.add sp off)
 
+    ;; The trampoline called deactivate with BL, so restore the continuation
+    ;; saved by reset-and-call before returning to the kernel.
+    (.pop :color #f saved-lr)
+    (.mov :color #f temp saved-lr)
+    (.push :color #f temp)
+
     ;; restore saved registers...
     ;; without coloring system because this is "cheating".
+    (#when ARM64_TARGET
+      (.pop :color #f s6)
+      (.pop :color #f s5))
     (.pop :color #f s4)
     (.pop :color #f s3)
     (.pop :color #f s2)
     (.pop :color #f s1)
     (.pop :color #f s0)
     ;; return to the kernel function that called the user code
-    (.ret)
+    (#if ARM64_TARGET
+      (.jr temp)
+      (.ret)
+      )
+      )
     )
   )
 
@@ -522,8 +590,15 @@
         (off :reg r15 :type uint :reset-here #t))
     (.mov temp return-from-thread) ;; could probably just call this...
     (.add temp off)
-    (.push temp)
-    (.ret)
+    ;; x86 returns through the address pushed on the stack.  AArch64 `ret`
+    ;; uses x30 instead, so pushing the target and executing `ret` would
+    ;; return to the caller again and re-enter return-from-thread-dead.
+    (#if ARM64_TARGET
+      (.jr temp)
+      (begin
+        (.push temp)
+        (.ret))
+      )
     )
   )
 
@@ -536,16 +611,25 @@
   (declare (asm-func object)
            )
 
-  (rlet ((pp :reg r13 :type process)
+  (with-context-extra-saved-gprs
+    (rlet ((pp :reg r13 :type process)
          (sp :reg rsp :type uint)
          (off :reg r15 :type uint)
-         (s0 :reg rbx :type uint)
-         (s1 :reg rbp :type uint)
-         (s2 :reg r10 :type uint)
-         (s3 :reg r11 :type uint)
-         (s4 :reg r12 :type uint)
+         (s0 :reg saved-gpr0 :type uint)
+         (s1 :reg saved-gpr1 :type uint)
+         (s2 :reg saved-gpr2 :type uint)
+         (s3 :reg saved-gpr3 :type uint)
+         (s4 :reg saved-gpr4 :type uint)
          (temp :reg rax :type uint)
+         ;; Keep the kernel continuation in the historical r9 role (ARM64 x5),
+         ;; whose .push/.pop pair really uses the stack; rax/x8 is special.
+         (saved-lr :reg r9 :type uint)
          )
+
+    ;; The ARM64 return address lives in x30 rather than on the stack. Save
+    ;; the kernel continuation before installing the user trampoline.
+    (.pop :color #f temp)
+    (.mov :color #f saved-lr temp)
 
     ;; set up the process pointer
     (set! pp (-> this process))
@@ -559,6 +643,10 @@
     (.push :color #f s2)
     (.push :color #f s3)
     (.push :color #f s4)
+    (#when ARM64_TARGET
+      (.push :color #f s5)
+      (.push :color #f s6))
+    (.push :color #f saved-lr)
 
     ;; make rsp a GOAL pointer
     (.sub sp off)
@@ -572,10 +660,14 @@
     ;; push the return trampoline to the stack for the user code to return to
     (set! temp (the uint return-from-thread))
     (.add temp off)
-    (.push temp)    ;; stack now 16 + 8 aligned
+    ;; `.push` on the historical rax/temp role is lowered to `mov x30, x8`;
+    ;; it must not consume a stack slot because the kernel context below is
+    ;; restored by return-from-thread.
+    (.push :color #f temp)
     ;; and call the function!
     (.add func off)
     (.jr func)
+      )
     )
   )
 
@@ -587,15 +679,20 @@
   ;; we begin this function with the thread object in pp.
   ;; not sure why we do this, maybe at one point suspending didn't clobber
   ;; temp registers?
-  (rlet ((this :reg r13 :type cpu-thread)
+  (with-context-extra-saved-gprs
+    (rlet ((this :reg r13 :type cpu-thread)
          (temp :reg rax :type uint)
          (off :reg r15 :type uint)
          (sp :reg rsp :type uint)
-         (s0 :reg rbx :type uint)
-         (s1 :reg rbp :type uint)
-         (s2 :reg r10 :type uint)
-         (s3 :reg r11 :type uint)
-         (s4 :reg r12 :type uint)
+         (s0 :reg saved-gpr0 :type uint)
+         (s1 :reg saved-gpr1 :type uint)
+         (s2 :reg saved-gpr2 :type uint)
+         (s3 :reg saved-gpr3 :type uint)
+         (s4 :reg saved-gpr4 :type uint)
+         ;; The legacy rax role is ARM64 x8 and has special .push/.pop
+         ;; semantics. Keep the saved continuation in historical r9 (ARM64
+         ;; x5), which uses an actual stack slot.
+         (saved-lr :reg r9 :type uint)
 
          (xmm8 :reg xmm8 :class fpr)
          (xmm9 :reg xmm9 :class fpr)
@@ -608,7 +705,7 @@
          )
 
     ;; get the return address pushed by "call" in the suspend.
-    (.pop temp)
+    (.pop :color #f temp)
     ;; convert to a GOAL address
     (.sub temp off)
     ;; store return address in thread
@@ -630,6 +727,11 @@
     (set! (-> this rreg 3) temp)
     (.mov :color #f temp s4)
     (set! (-> this rreg 4) temp)
+    (#when ARM64_TARGET
+      (.mov :color #f temp s5)
+      (set! (-> this rreg 5) temp)
+      (.mov :color #f temp s6)
+      (set! (-> this rreg 6) temp))
 
     ;; back up fprs
     (.mov :color #f temp xmm8)
@@ -680,15 +782,27 @@
     ;; convert it back to a real pointer
     (.add sp off)
 
+    ;; Restore the kernel continuation saved by reset-and-call.
+    (.pop :color #f saved-lr)
+    (.mov :color #f temp saved-lr)
+    (.push :color #f temp)
+
     ;; restore saved registers...
     ;; without coloring system because this is "cheating".
+    (#when ARM64_TARGET
+      (.pop :color #f s6)
+      (.pop :color #f s5))
     (.pop :color #f s4)
     (.pop :color #f s3)
     (.pop :color #f s2)
     (.pop :color #f s1)
     (.pop :color #f s0)
     ;; return to the kernel function that called the user code
-    (.ret)
+    (#if ARM64_TARGET
+      (.jr temp)
+      (.ret)
+      )
+      )
     )
   (none)
   )
@@ -701,15 +815,16 @@
            ;;(print-asm)
            )
 
-  (rlet ((this :reg r13 :type cpu-thread)
+  (with-context-extra-saved-gprs
+    (rlet ((this :reg r13 :type cpu-thread)
          (temp :reg rax :type uint)
          (off :reg r15 :type uint)
          (sp :reg rsp :type uint)
-         (s0 :reg rbx :type uint)
-         (s1 :reg rbp :type uint)
-         (s2 :reg r10 :type uint)
-         (s3 :reg r11 :type uint)
-         (s4 :reg r12 :type uint)
+         (s0 :reg saved-gpr0 :type uint)
+         (s1 :reg saved-gpr1 :type uint)
+         (s2 :reg saved-gpr2 :type uint)
+         (s3 :reg saved-gpr3 :type uint)
+         (s4 :reg saved-gpr4 :type uint)
          (a4 :reg r8 :type uint)
          (a5 :reg r9 :type uint)
 
@@ -724,12 +839,25 @@
          (xmm15 :reg xmm15 :class fpr)
          )
 
+    ;; Preserve the kernel continuation while this routine installs the
+    ;; resumed thread's program counter in the link register. Use historical
+    ;; a5/r9 (ARM64 x5): a4/r8 is ARM64 x4, but rax/x8 has special
+    ;; .push/.pop semantics and cannot be used as a real stack operand. a5 is
+    ;; reloaded with its bootstrap argument below, after this saved slot is no
+    ;; longer needed.
+    (.pop :color #f temp)
+    (.mov :color #f a5 temp)
+
     ;; save the current kernel regs
     (.push :color #f s0)
     (.push :color #f s1)
     (.push :color #f s2)
     (.push :color #f s3)
     (.push :color #f s4)
+    (#when ARM64_TARGET
+      (.push :color #f s5)
+      (.push :color #f s6))
+    (.push :color #f a5)
 
     ;; make rsp a GOAL pointer
     (.sub sp off)
@@ -771,6 +899,11 @@
     (.mov :color #f s3 temp)
     (set! temp (-> this rreg 4))
     (.mov :color #f s4 temp)
+    (#when ARM64_TARGET
+      (set! temp (-> this rreg 5))
+      (.mov :color #f s5 temp)
+      (set! temp (-> this rreg 6))
+      (.mov :color #f s6 temp))
     (set! temp-float (-> this freg 0))
     (.mov :color #f xmm8 temp-float)
     (set! temp-float (-> this freg 1))
@@ -813,6 +946,7 @@
     (.jr temp)
     (.add a4 a4)
     (.add a5 a5)
+      )
     )
   (none)
   )
@@ -1613,9 +1747,9 @@
            (if (logtest? (-> arg0 mask) (process-mask sleep-code))
                (set! (-> arg0 status) 'suspended)
                (with-pc-profiler "code"
-                 ((-> arg0 main-thread resume-hook) (-> arg0 main-thread))
-                 )
+               ((-> arg0 main-thread resume-hook) (-> arg0 main-thread))
                )
+             )
           ;;  (format 0 "Finished Code | Proc '~A' | C1: ~X C2: ~X C3: ~X~%" (-> arg0 name) (-> *canary-1*) (-> *canary-2*) (-> *canary-3*))
 
 
@@ -1808,8 +1942,8 @@
       (set! (-> this type) type-to-make)
       (set! (-> this name) name)
       ;; get the return address (the compiler won't touch the stack because we're an asm-func)
-      (.pop temp)
-      (.push temp)
+      (.pop :color #f temp)
+      (.push :color #f temp)
       ;; make it a GOAL address so it fits in 32 bits
       (.sub temp off)
       ;; store it
@@ -1847,7 +1981,7 @@
       (set! (-> this freg 5) (the-as float temp))
       (.mov :color #f temp xmm14)
       (set! (-> this freg 6) (the-as float temp))
-      (.mov :color #f temp xmm15)
+    (.mov :color #f temp xmm15)
       (set! (-> this freg 7) (the-as float temp))
 
       ;; push this stack frame
@@ -1945,10 +2079,10 @@
     (.add sp off)
 
     ;; overwrite our return address
-    (.pop temp)
+    (.pop :color #f temp)
     (set! temp (the uint (-> this ra)))
     (.add temp off)
-    (.push temp)
+    (.push :color #f temp)
 
     ;; load the return register
     (.mov temp value)
@@ -2255,11 +2389,12 @@
            ;;(print-asm)
            )
 
-  (rlet ((s0 :reg rbx :type uint)
-         (s1 :reg rbp :type uint)
-         (s2 :reg r10 :type uint)
-         (s3 :reg r11 :type uint)
-         (s4 :reg r12 :type uint)
+  (with-context-extra-saved-gprs
+    (rlet ((s0 :reg saved-gpr0 :type uint)
+         (s1 :reg saved-gpr1 :type uint)
+         (s2 :reg saved-gpr2 :type uint)
+         (s3 :reg saved-gpr3 :type uint)
+         (s4 :reg saved-gpr4 :type uint)
          (a0 :reg rdi :type uint)       ; ok
          (a1 :reg rsi :type uint)       ; ok
          (a2 :reg rdx :type uint)       ; ok
@@ -2273,14 +2408,19 @@
 
     (.mov temp return-from-thread-dead)
     (.add temp off)
-    (.push temp)
+    (.push :color #f temp)
 
     ;; stack is 16 + 8 aligned now
 
+    ;; Keep the historical mapping byte-for-byte intact on x86. ARM64 adds
+    ;; the two argument registers backed by x27/x28.
     (.mov :color #f a0 s1)
     (.mov :color #f a1 s2)
     (.mov :color #f a2 s3)
     (.mov :color #f a3 s4)
+    (#when ARM64_TARGET
+      (.mov :color #f a4 s5)
+      (.mov :color #f a5 s6))
 
     (.add :color #f s0 off)
     (.jr :color #f s0)
@@ -2288,6 +2428,7 @@
     (.add a4 a4)
     (.add a5 a5)
     )
+  )
   )
 ;; decomp deviation
 
@@ -2379,9 +2520,9 @@
           (let ((s5-1 (-> v1-12 0 brother)))
             (deactivate (-> v1-12 0))
             (set! v1-12 s5-1)
-            )
-          )
-        )
+      )
+    )
+  )
 
       ;; return process memory to the pool
       (return-process (-> this pool) this)
@@ -2499,5 +2640,3 @@
 (defmacro ps (&key (detail #f))
   `(inspect-process-tree *active-pool* 0 0 ,detail)
   )
-
-

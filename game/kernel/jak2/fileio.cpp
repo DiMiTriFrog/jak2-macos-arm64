@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "common/util/FileUtil.h"
 #include "common/versions/versions.h"
 
 #include "game/kernel/common/fileio.h"
@@ -96,12 +97,16 @@ char* MakeFileName(int type, const char* name, int new_string) {
     // GOAL object file, but containing data instead of code.
     // likely packed by a tool that isn't the GOAL compiler.
     // sprintf(buf, "%sfinal/%s.go", prefix, name);
-    sprintf(buf, "%sout/jak2/obj/%s.go", prefix, name);
+    auto path = file_util::get_game_output_dir(GameVersion::Jak2) / "obj" /
+                (std::string(name) + ".go");
+    kstrcpy(buf, path.string().c_str());
   } else if (type == TX_PAGE_FILE_TYPE) {
     // Texture Page
     // part of level files, so it has a version number.
     // sprintf(buf, "%sdata/texture-page%d/%s.go", prefix, TX_PAGE_VERSION, name);
-    sprintf(buf, "%sout/jak2/obj/%s.go", prefix, name);
+    auto path = file_util::get_game_output_dir(GameVersion::Jak2) / "obj" /
+                (std::string(name) + ".go");
+    kstrcpy(buf, path.string().c_str());
   } else if (type == JA_FILE_TYPE) {
     // Art JA (joint animation? no idea)
     // part of level files, so it has a version number
@@ -185,7 +190,8 @@ char* MakeFileName(int type, const char* name, int new_string) {
     // REFPLANT? no idea. it's different in jak2.
     sprintf(buf, "%sdb/refplant/%s", prefix, name);
   } else if (type == ISO_FILE_TYPE) {
-    sprintf(buffer_633, "/out/iso/%s", name);
+    auto path = file_util::get_game_output_dir(GameVersion::Jak2) / "iso" / name;
+    kstrcpy(buffer_633, path.string().c_str());
   } else {
     printf("UNKNOWN FILE TYPE %d\n", type);
   }

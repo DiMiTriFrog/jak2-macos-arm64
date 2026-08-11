@@ -620,7 +620,11 @@ Val* Compiler::compile_real_function_call(const goos::Object& form,
 
   auto cc = get_function_calling_convention(function->type(), m_ts, m_instr_set);
   RegClass ret_reg_class = RegClass::GPR_64;
-  if (cc.return_reg && cc.return_reg->is_128bit_simd(m_instr_set)) {
+  // ARM64 X and V registers share the same numeric ids, so the hardware
+  // return register cannot identify the register class.  Use the return type,
+  // which is also what get_function_calling_convention uses to select the ABI
+  // register, to keep object/integer returns in the GPR class.
+  if (cc.return_reg && m_ts.get_load_size_allow_partial_def(return_ts) == 16) {
     ret_reg_class = RegClass::INT_128;
   }
 

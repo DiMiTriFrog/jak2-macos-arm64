@@ -60,7 +60,13 @@ struct DisplaySettings {
   int window_xpos = 50;
   int window_ypos = 50;
   int display_id = 0;
+#if defined(__APPLE__) && defined(__aarch64__)
+  // Apple Game Mode requires the native macOS full-screen Space. Borderless
+  // fullscreen fills the display but does not enter that system-managed mode.
+  DisplayMode display_mode = DisplayMode::Fullscreen;
+#else
   DisplayMode display_mode = DisplayMode::Borderless;
+#endif
 
   void load_settings();
   void save_settings();

@@ -433,6 +433,7 @@ It type checks the arguments for the entry function.
          ;; - make sure that when this code returns, we do a deactivate
          ;; - reset the stack to the top, so we can't just call the code.
          (rlet ((temp)
+                (arm-temp :reg rax)
                 (func)
                 (sp :reg rsp :type uint)
                 (off :reg r15 :type uint)
@@ -457,7 +458,12 @@ It type checks the arguments for the entry function.
            ;; push the return trampoline for when code returns.
            (.mov temp return-from-thread-dead) ;; will deactivate
            (.add temp off)
-           (.push temp)
+           (#if ARM64_TARGET
+             (begin
+               (.mov arm-temp temp)
+               (.push :color #f arm-temp))
+             (.push temp)
+             )
            ;; and call!
            (.jr func)
            ;; stupid hack so the compiler doesn't throw away these registers.
@@ -552,4 +558,3 @@ It type checks the arguments for the entry function.
         (send-event-function ,proc event-data)
         )
   )
-

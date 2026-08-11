@@ -72,3 +72,16 @@ struct LinkHeaderV5 {
 // when a u32/s32 symbol link contains this value, (s7 + <val>) should be a 4-byte aligned address,
 // not including the 1 byte symbol offset. (no effect in jak 1).
 constexpr u32 LINK_SYM_NO_OFFSET_FLAG = 0xbadbeef;
+
+// Status returned by the incremental linker. These values cross the
+// C++/GOAL boundary and must remain stable.
+enum class LinkStatus : u32 {
+  Failed = 0,
+  InProgress = 1,
+  Complete = 2,
+};
+
+// In ARM64 v3 objects, link_infos[].size carries the page-aligned boundary
+// between executable functions and writable static data.  The high bit marks
+// this private metadata so x86 objects retain their original header bytes.
+constexpr u32 LINK_ARM64_EXECUTABLE_SIZE_FLAG = 0x80000000;

@@ -104,7 +104,7 @@ void deci2_runner(SystemThreadInterface& iface) {
   std::function<bool()> shutdown_callback = [&]() { return iface.get_want_exit(); };
 
   // create and register server
-  Deci2Server server(shutdown_callback, DECI2_PORT - 1 + (int)g_game_version);
+  Deci2Server server(shutdown_callback, g_server_port);
   ee::LIBRARY_sceDeci2_register(&server);
 
   // now its ok to continue with initialization
@@ -260,7 +260,12 @@ void iop_runner(SystemThreadInterface& iface, GameVersion version) {
   iop.reset_allocator();
   ee::LIBRARY_sceSif_register(&iop);
   iop::LIBRARY_register(&iop);
-  Gfx::register_vsync_callback([&iop]() { iop.kernel.signal_vblank(); });
+  Gfx::register_vsync_callback([&iop]() {
+    iop.kernel.signal_vblank();
+    // A VBlank can be the only event capable of waking a sleeping IOP stream
+    // thread.  Interrupt the timed scheduler wait so the kernel can deliver it.
+    iop.signal_run_iop();
+  });
 
   if (version != GameVersion::Jak3 && version != GameVersion::JakX) {
     jak1::dma_init_globals();

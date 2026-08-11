@@ -332,17 +332,23 @@
           )
         )
     (string<-charp (clear *dgo-name*) (-> arg0 rootname))
-    (nonzero? (link-begin
-                (the-as pointer s4-0)
-                (-> *dgo-name* data)
-                (the-as int (-> arg0 length))
-                arg1
-                (if arg3
-                    (link-flag output-load-msg output-load-true-msg execute-login print-login fast-link)
-                    (link-flag output-load-msg output-load-true-msg execute-login fast-link)
-                    )
-                )
-              )
+    (let ((link-status
+            (link-begin
+              (the-as pointer s4-0)
+              (-> *dgo-name* data)
+              (the-as int (-> arg0 length))
+              arg1
+              (if arg3
+                  (link-flag output-load-msg output-load-true-msg execute-login print-login fast-link)
+                  (link-flag output-load-msg output-load-true-msg execute-login fast-link)
+                  )
+              )))
+      (if (= link-status LINK_STATUS_FAILED)
+          (format 0 "ERROR: linker failed while loading ~A; heap allocation was rolled back.~%"
+                  (-> arg0 rootname))
+          )
+      link-status
+      )
     )
   )
 

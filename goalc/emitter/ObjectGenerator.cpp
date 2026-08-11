@@ -16,6 +16,8 @@
 #include "ObjectGenerator.h"
 
 #include "common/goal_constants.h"
+#include "common/jit_memory.h"
+#include "common/link_types.h"
 #include "common/type_system/TypeSystem.h"
 #include "common/versions/versions.h"
 
@@ -83,15 +85,24 @@ ObjectFileData ObjectGenerator::generate_data_v3(const TypeSystem* ts) {
   // do static data layout (step 2, part 2)
   for (int seg = N_SEG; seg-- > 0;) {
     auto& data = m_data_by_seg.at(seg);
+    bool first_static = true;
     for (auto& s : m_static_data_by_seg.at(seg)) {
       // align
-      while (data.size() % s.min_align) {
+      size_t alignment = s.min_align;
+      if (m_instruction_set == InstructionSet::ARM64 && first_static) {
+        // Keep the first static object on a page boundary.  The runtime can
+        // then leave every static-data page writable while protecting only
+        // the preceding function pages as RX.
+        alignment = jit_memory::page_size();
+      }
+      while (data.size() % alignment) {
         insert_data<u8>(seg, 0);
       }
 
       s.location = data.size();
 
       data.insert(data.end(), s.data.begin(), s.data.end());
+      first_static = false;
     }
   }
 
@@ -745,6 +756,14 @@ std::vector<u8> ObjectGenerator::generate_header_v3() {
   for (int i = N_SEG; i-- > 0;) {
     table.link_seg[i].offset = offset;                 // start of the link
     table.link_seg[i].size = m_link_by_seg[i].size();  // size of the link data
+    if (m_instruction_set == InstructionSet::ARM64) {
+      uint32_t executable_size = m_data_by_seg[i].size();
+      if (!m_static_data_by_seg.at(i).empty()) {
+        executable_size = m_static_data_by_seg.at(i).front().location;
+      }
+      ASSERT(executable_size < LINK_ARM64_EXECUTABLE_SIZE_FLAG);
+      table.link_seg[i].size = LINK_ARM64_EXECUTABLE_SIZE_FLAG | executable_size;
+    }
     offset += m_link_by_seg[i].size();                 // to next link data
     total_link_size += m_link_by_seg[i].size();        // need to track this.
   }

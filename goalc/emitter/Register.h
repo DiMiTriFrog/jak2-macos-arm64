@@ -273,6 +273,7 @@ class RegisterInfo {
   Register get_xmm_arg_reg(int id) const { return m_xmm_arg_regs.at(id); }
   Register get_saved_gpr(int id) const { return m_saved_gprs.at(id); }
   Register get_saved_xmm(int id) const { return m_saved_xmms.at(id); }
+  const std::vector<Register>& get_saved_gprs() const { return m_saved_gprs; }
   Register get_process_reg() const { return m_process_reg; }
   Register get_st_reg() const { return m_st_reg; }
   Register get_offset_reg() const { return m_offset_reg; }

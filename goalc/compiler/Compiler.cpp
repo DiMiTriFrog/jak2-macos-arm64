@@ -43,6 +43,14 @@ Compiler::Compiler(GameVersion version,
 
   // define game version before loading goal-lib.gc
   m_goos.set_global_variable_by_name("GAME_VERSION", m_goos.intern(game_version_names[m_version]));
+  // Expose the selected code-generation target to GOAL conditional compilation.  Keep this
+  // separate from PC_PORT: both x86-64 and ARM64 are PC targets, but ARM64 needs larger native
+  // stacks for the generated code.
+  m_global_constants.set(
+      m_goos.reader.symbolTable.intern("ARM64_TARGET"),
+      m_goos.intern(m_instr_set == emitter::InstructionSet::ARM64 ? "#t" : "#f"));
+  m_goos.set_global_variable_by_name(
+      "ARM64_TARGET", m_goos.intern(m_instr_set == emitter::InstructionSet::ARM64 ? "#t" : "#f"));
 
   // load GOAL library
   Object library_code = m_goos.reader.read_from_file({"goal_src", "goal-lib.gc"});
@@ -260,7 +268,9 @@ void Compiler::color_object_file(FileEnv* env) {
     input.instr_set = m_instr_set;
     for (auto& i : f->code()) {
       input.instructions.push_back(i->to_rai(m_instr_set));
-      // input.debug_instruction_names.push_back(i->print());
+      if (m_settings.debug_print_regalloc) {
+        input.debug_instruction_names.push_back(i->print());
+      }
     }
 
     for (auto& reg_val : f->reg_vals()) {

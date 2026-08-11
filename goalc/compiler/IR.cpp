@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "common/link_types.h"
 #include "common/symbols.h"
 
 #include "goalc/compiler/Env.h"
@@ -189,6 +190,19 @@ emitter::StaticRecord emit_arm64_literal(emitter::ObjectGenerator* gen,
   return lit;
 }
 
+// Symbol values are stored at the aligned address immediately before the
+// tagged symbol object.  Seed the literal with the linker sentinel that asks
+// symlink_v3 to emit (symbol offset - 1), matching the x86 symbol-memory form.
+emitter::StaticRecord emit_arm64_symbol_value_literal(emitter::ObjectGenerator* gen,
+                                                      emitter::IR_Record irec,
+                                                      emitter::Register dst) {
+  auto lit = emit_arm64_literal(gen, irec, dst);
+  auto& data = gen->get_static_data(lit);
+  u32 no_offset = LINK_SYM_NO_OFFSET_FLAG;
+  memcpy(data.data(), &no_offset, sizeof(no_offset));
+  return lit;
+}
+
 void emit_arm64_literal_address(emitter::ObjectGenerator* gen,
                                 emitter::IR_Record irec,
                                 const emitter::StaticRecord& literal,
@@ -364,6 +378,8 @@ void IR_LoadSymbolPointer::do_codegen_arm64(emitter::ObjectGenerator* gen,
     // Load the symbol offset from a literal and add st: xDst = st + offset.
     auto lit = emit_arm64_literal(gen, irec, X16);
     gen->link_static_symbol_ptr(lit, 0, m_name);
+    // Symbol links are encoded as signed 32-bit GOAL offsets.
+    gen->add_instr(IGen::movsx_r64_r32(*gen, X16, X16), irec);
     gen->add_instr(IGen::mov_gpr64_gpr64(*gen, dest_reg,
                                          emitter::get_register_info(gen->instr_set()).get_st_reg()),
                    irec);
@@ -403,11 +419,19 @@ void IR_SetSymbolValue::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                          const AllocationResult& allocs,
                                          emitter::IR_Record irec) {
   auto src_reg = get_reg(m_src, allocs, irec);
-  // x16 = st + symbol offset (offset loaded from a literal, patched at load).
-  auto lit = emit_arm64_literal(gen, irec, X16);
+  // x16 = host address of the aligned symbol value (offset loaded from a
+  // linker-patched literal).
+  auto lit = emit_arm64_symbol_value_literal(gen, irec, X16);
   gen->link_static_symbol_ptr(lit, 0, m_dest->name());
+  // Symbol links are encoded as signed 32-bit GOAL offsets.
+  gen->add_instr(IGen::movsx_r64_r32(*gen, X16, X16), irec);
   gen->add_instr(IGen::add_gpr64_gpr64(*gen, X16,
                                        emitter::get_register_info(gen->instr_set()).get_st_reg()),
+                 irec);
+  // Symbol values live in the host-mapped EE memory.  X21 is the GOAL s7
+  // offset; X22 is the host base used by all other GOAL memory accesses.
+  gen->add_instr(IGen::add_gpr64_gpr64(*gen, X16,
+                                       emitter::get_register_info(gen->instr_set()).get_offset_reg()),
                  irec);
   gen->add_instr(IGen::store32_gpr64_plus_s32(*gen, X16, 0, src_reg), irec);
 }
@@ -452,15 +476,25 @@ void IR_GetSymbolValue::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                          const AllocationResult& allocs,
                                          emitter::IR_Record irec) {
   auto dst_reg = get_reg(m_dest, allocs, irec);
-  auto lit = emit_arm64_literal(gen, irec, X16);
+  auto lit = emit_arm64_symbol_value_literal(gen, irec, X16);
   gen->link_static_symbol_ptr(lit, 0, m_src->name());
+  // Symbol links are encoded as signed 32-bit GOAL offsets.
+  gen->add_instr(IGen::movsx_r64_r32(*gen, X16, X16), irec);
   gen->add_instr(IGen::add_gpr64_gpr64(*gen, X16,
                                        emitter::get_register_info(gen->instr_set()).get_st_reg()),
                  irec);
+  // Convert the GOAL s7-relative symbol offset into a host address.
+  gen->add_instr(IGen::add_gpr64_gpr64(*gen, X16,
+                                       emitter::get_register_info(gen->instr_set()).get_offset_reg()),
+                 irec);
+  const auto load_dest = dst_reg == SP ? X17 : dst_reg;
   if (m_sext) {
-    gen->add_instr(IGen::load32s_gpr64_plus_s32(*gen, dst_reg, 0, X16), irec);
+    gen->add_instr(IGen::load32s_gpr64_plus_s32(*gen, load_dest, 0, X16), irec);
   } else {
-    gen->add_instr(IGen::load32u_gpr64_plus_s32(*gen, dst_reg, 0, X16), irec);
+    gen->add_instr(IGen::load32u_gpr64_plus_s32(*gen, load_dest, 0, X16), irec);
+  }
+  if (dst_reg == SP) {
+    gen->add_instr(IGen::mov_gpr64_gpr64(*gen, SP, X17), irec);
   }
 }
 
@@ -474,8 +508,12 @@ RegAllocInstr IR_RegSet::to_rai() {
   RegAllocInstr rai;
   rai.write.push_back(m_dest->ireg());
   rai.read.push_back(m_src->ireg());
-  if (m_dest->ireg().reg_class == m_src->ireg().reg_class) {
-    rai.is_move = true;  // only true if we aren't moving from register kind to register kind
+  if (m_dest->ireg().reg_class == m_src->ireg().reg_class &&
+      !m_dest->rlet_constraint().has_value() && !m_src->rlet_constraint().has_value()) {
+    // A move involving an rlet-constrained register must remain a real value
+    // transfer.  Coalescing it with the constrained register can make a later
+    // arithmetic result write a fixed GOAL context register (st/pp/offset).
+    rai.is_move = true;
   }
   return rai;
 }
@@ -1429,10 +1467,16 @@ void IR_LoadConstOffset::do_codegen_arm64(emitter::ObjectGenerator* gen,
 
   if (m_dest->ireg().reg_class == RegClass::GPR_64) {
     auto offset_reg = emitter::get_register_info(gen->instr_set()).get_offset_reg();
+    // A load encodes register 31 as XZR, not SP. Load stack-pointer values
+    // through the reserved scratch register and use the SP-aware move form.
+    const auto load_dest = dest_reg == SP ? X17 : dest_reg;
     emit_arm64_memory_address(gen, irec, base_reg, offset_reg, m_offset);
     gen->add_instr(IGen::mov_gpr64_u64(*gen, X17, 0), irec);
     gen->add_instr(
-        IGen::load_goal_gpr(*gen, dest_reg, X16, X17, 0, m_info.size, m_info.sign_extend), irec);
+        IGen::load_goal_gpr(*gen, load_dest, X16, X17, 0, m_info.size, m_info.sign_extend), irec);
+    if (dest_reg == SP) {
+      gen->add_instr(IGen::mov_gpr64_gpr64(*gen, SP, X17), irec);
+    }
   } else if (m_dest->ireg().reg_class == RegClass::FLOAT && m_info.size == 4 &&
              !m_info.sign_extend && m_info.reg == RegClass::FLOAT) {
     emit_arm64_memory_address(gen, irec, base_reg,
@@ -1749,7 +1793,8 @@ std::string IR_Asm::get_color_suffix_string() {
 // AsmRet
 ///////////////////////
 
-IR_AsmRet::IR_AsmRet(bool use_coloring) : IR_Asm(use_coloring) {}
+IR_AsmRet::IR_AsmRet(bool use_coloring, bool returns_value)
+    : IR_Asm(use_coloring), m_returns_value(returns_value) {}
 
 std::string IR_AsmRet::print() {
   return fmt::format(".ret{}", get_color_suffix_string());
@@ -1770,6 +1815,13 @@ void IR_AsmRet::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                  const AllocationResult& allocs,
                                  emitter::IR_Record irec) {
   (void)allocs;
+  // GOAL asm forms name the historical x86 return register as rax (mapped to
+  // x8 on ARM64), while ordinary ARM64 calls receive a scalar result in x0.
+  // Bridge the two conventions only for asm functions with a value return;
+  // `asm-func none` must leave the native return register untouched.
+  if (m_returns_value) {
+    gen->add_instr(IGen::mov_gpr64_gpr64(*gen, X0, X8), irec);
+  }
   gen->add_instr(IGen::ret(*gen), irec);
 }
 
@@ -1866,7 +1918,14 @@ void IR_AsmPush::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                   const AllocationResult& allocs,
                                   emitter::IR_Record irec) {
   auto src_reg = m_use_coloring ? get_reg(m_src, allocs, irec) : get_no_color_reg(m_src);
-  gen->add_instr(IGen::push_gpr64(*gen, src_reg), irec);
+  if (src_reg == X8) {
+    // x86 asm-funcs use .push rax to replace the return address on the GOAL
+    // stack before .ret or .jr.  ARM64 keeps the return address in x30, not
+    // on the stack; rax is the historical GOAL temporary mapped to x8.
+    gen->add_instr(IGen::mov_gpr64_gpr64(*gen, X30, X8), irec);
+  } else {
+    gen->add_instr(IGen::push_gpr64(*gen, src_reg), irec);
+  }
 }
 
 ///////////////////////
@@ -1901,7 +1960,14 @@ void IR_AsmPop::do_codegen_arm64(emitter::ObjectGenerator* gen,
                                  const AllocationResult& allocs,
                                  emitter::IR_Record irec) {
   auto dst_reg = m_use_coloring ? get_reg(m_dst, allocs, irec) : get_no_color_reg(m_dst);
-  gen->add_instr(IGen::pop_gpr64(*gen, dst_reg), irec);
+  if (dst_reg == X8) {
+    // The matching ARM64 operation for .pop rax in these asm-funcs is to
+    // capture the caller's link register.  Do not change SP: unlike x86, the
+    // ARM64 BL instruction does not place its return address on the GOAL stack.
+    gen->add_instr(IGen::mov_gpr64_gpr64(*gen, X8, X30), irec);
+  } else {
+    gen->add_instr(IGen::pop_gpr64(*gen, dst_reg), irec);
+  }
 }
 
 ///////////////////////
@@ -2036,15 +2102,24 @@ void IR_GetSymbolValueAsm::do_codegen_arm64(emitter::ObjectGenerator* gen,
   // Load the symbol's runtime address from a relocatable literal, then add
   // the GOAL static-table base.  X16 is reserved for this linker scratch
   // register by the ARM64 register model and is never exposed to coloring.
-  auto lit = emit_arm64_literal(gen, irec, X16);
+  auto lit = emit_arm64_symbol_value_literal(gen, irec, X16);
   gen->link_static_symbol_ptr(lit, 0, m_sym_name);
+  // Symbol links are encoded as signed 32-bit GOAL offsets.
+  gen->add_instr(IGen::movsx_r64_r32(*gen, X16, X16), irec);
   gen->add_instr(
       IGen::add_gpr64_gpr64(*gen, X16, emitter::get_register_info(gen->instr_set()).get_st_reg()),
       irec);
+  gen->add_instr(
+      IGen::add_gpr64_gpr64(*gen, X16, emitter::get_register_info(gen->instr_set()).get_offset_reg()),
+      irec);
+  const auto load_dest = dst_reg == SP ? X17 : dst_reg;
   if (m_sext) {
-    gen->add_instr(IGen::load32s_gpr64_plus_s32(*gen, dst_reg, 0, X16), irec);
+    gen->add_instr(IGen::load32s_gpr64_plus_s32(*gen, load_dest, 0, X16), irec);
   } else {
-    gen->add_instr(IGen::load32u_gpr64_plus_s32(*gen, dst_reg, 0, X16), irec);
+    gen->add_instr(IGen::load32u_gpr64_plus_s32(*gen, load_dest, 0, X16), irec);
+  }
+  if (dst_reg == SP) {
+    gen->add_instr(IGen::mov_gpr64_gpr64(*gen, SP, X17), irec);
   }
 }
 
@@ -2817,9 +2892,10 @@ RegAllocInstr IR_BlendVF::to_rai() {
 RegAllocInstr IR_BlendVF::to_rai(emitter::InstructionSet instr_set) {
   auto rai = to_rai();
   if (instr_set == emitter::InstructionSet::ARM64) {
-    // ARM64 blend_vf builds its selector in X16/V16.  The shared numeric
-    // register id means one exclusion protects both register classes.
+    // ARM64 blend_vf builds its selector in X16/V16.  Exclusions are scoped
+    // to a register class, so protect both scratch registers explicitly.
     rai.add_exclude(emitter::X16, RegClass::GPR_64);
+    rai.add_exclude(emitter::V16, RegClass::VECTOR_FLOAT);
   }
   return rai;
 }

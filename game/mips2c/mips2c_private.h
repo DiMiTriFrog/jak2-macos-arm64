@@ -25,6 +25,9 @@ u64 _call_goal8_asm_systemv(void* func, u64* arg_array, u64 zero, u64 pp, u64 st
 #elif defined __APPLE__ && defined __x86_64__
 u64 _call_goal8_asm_systemv(void* func, u64* arg_array, u64 zero, u64 pp, u64 st, void* off) asm(
     "_call_goal8_asm_systemv");
+#elif defined __APPLE__ && defined __aarch64__
+u64 _call_goal8_asm_arm64(void* func, u64* arg_array, u64 zero, u64 pp, u64 st, void* off) asm(
+    "_call_goal8_asm_arm64");
 #elif _WIN32
 u64 _call_goal8_asm_win32(void* func, u64* arg_array, u64 zero, u64 pp, u64 st, void* off);
 #endif
@@ -359,6 +362,9 @@ struct ExecutionContext {
 #elif defined __APPLE__ && defined __x86_64__
     gprs[v0].du64[0] = _call_goal8_asm_systemv(g_ee_main_mem + addr, args, 0, gprs[s6].du64[0],
                                                gprs[s7].du64[0], g_ee_main_mem);
+#elif defined __APPLE__ && defined __aarch64__
+    gprs[v0].du64[0] = _call_goal8_asm_arm64(g_ee_main_mem + addr, args, 0, gprs[s6].du64[0],
+                                             gprs[s7].du64[0], g_ee_main_mem);
 #elif _WIN32
     gprs[v0].du64[0] = _call_goal8_asm_win32(g_ee_main_mem + addr, args, 0, gprs[s6].du64[0],
                                              gprs[s7].du64[0], g_ee_main_mem);

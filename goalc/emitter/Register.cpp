@@ -126,7 +126,13 @@ RegisterInfo RegisterInfo::make_register_info(emitter::InstructionSet instr_set)
     info.m_gpr_arg_regs =
         std::array<Register, N_ARGS>({X0, X1, X2, X3, X4, X5, X6, X7});
     info.m_xmm_arg_regs = std::array<Register, N_ARGS>({V0, V1, V2, V3, V4, V5, V6, V7});
-    info.m_saved_gprs = {X19, X20, X21, X22, X23, X24, X25, X26, X27, X28};
+    // x20/x21/x22 are the fixed GOAL process/symbol-table/offset context
+    // registers.  They are callee-preserved by the native bridges, but they
+    // are not ordinary allocator-owned saved registers: saving them in every
+    // generated function would make the context depend on that function's
+    // GOAL stack frame.  This mirrors x86, where r13-r15 are special and are
+    // not included in the saved-register set.
+    info.m_saved_gprs = {X19, X23, X24, X25, X26, X27, X28};
     info.m_saved_xmms = {V8, V9, V10, V11, V12, V13, V14, V15};
 
     for (auto sr : info.m_saved_gprs) {
@@ -137,11 +143,18 @@ RegisterInfo RegisterInfo::make_register_info(emitter::InstructionSet instr_set)
     }
 
     // x16, x17 and x18 are intentionally absent from every allocation order.
+    // x20/x21/x22 carry the GOAL pp/s7/offset context for every generated
+    // function. They must never be assigned to ordinary virtual registers.
     info.m_gpr_alloc_order = {X0,  X1,  X2,  X3,  X4,  X5,  X6,  X7,  X8,  X9,  X10, X11,
-                              X12, X13, X14, X15, X19, X20, X21, X22, X23, X24, X25, X26,
-                              X27, X28};
-    info.m_xmm_alloc_order = {V0,  V1,  V2,  V3,  V4,  V5,  V6,  V7,  V8,  V9,  V10, V11,
-                              V12, V13, V14, V15, V16, V17, V18, V19, V20, V21, V22, V23,
+                              X12, X13, X14, X15, X19, X23, X24, X25, X26, X27, X28};
+    // cpu-thread has legacy scalar storage for v8-v15.  Until that context
+    // format is widened to 128 bits, a suspended GOAL process cannot retain a
+    // vector value in those callee-saved registers.  Keep them out of normal
+    // and spill allocation: values live across suspend then reside in the
+    // copied GOAL stack, while the dedicated kernel scalar context continues
+    // to use v8-v15 explicitly.
+    info.m_xmm_alloc_order = {V0,  V1,  V2,  V3,  V4,  V5,  V6,  V7,
+                              V16, V17, V18, V19, V20, V21, V22, V23,
                               V24, V25, V26, V27, V28, V29, V30, V31};
 
     info.m_gpr_temp_only_alloc_order = {X0, X1,  X2,  X3,  X4, X5, X6, X7,
@@ -150,12 +163,12 @@ RegisterInfo RegisterInfo::make_register_info(emitter::InstructionSet instr_set)
                                         V16, V17, V18, V19, V20, V21, V22, V23, V24, V25,
                                         V26, V27, V28, V29, V30, V31};
 
-    info.m_gpr_spill_temp_alloc_order = {X0, X1,  X2,  X3,  X4,  X5,  X6,  X7,  X8,  X9,  X10,
-                                         X11, X12, X13, X14, X15, X19, X20, X21, X22, X23, X24,
-                                         X25, X26, X27, X28};
-    info.m_xmm_spill_temp_alloc_order = {V0,  V1,  V2,  V3,  V4,  V5,  V6,  V7,  V8,  V9,  V10,
-                                         V11, V12, V13, V14, V15, V16, V17, V18, V19, V20, V21,
-                                         V22, V23, V24, V25, V26, V27, V28, V29, V30, V31};
+    info.m_gpr_spill_temp_alloc_order = {X0, X1,  X2, X3, X4, X5, X6, X7, X8, X9, X10,
+                                         X11, X12, X13, X14, X15, X19, X23, X24, X25, X26, X27,
+                                         X28};
+    info.m_xmm_spill_temp_alloc_order = {V0,  V1,  V2,  V3,  V4,  V5,  V6,  V7,
+                                         V16, V17, V18, V19, V20, V21, V22, V23,
+                                         V24, V25, V26, V27, V28, V29, V30, V31};
 
     info.m_process_reg = X20;
     info.m_st_reg = X21;

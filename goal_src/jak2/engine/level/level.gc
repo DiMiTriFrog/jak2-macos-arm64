@@ -29,9 +29,15 @@ into 7 sections, which might explain the weird sizes in the center.
 (defglobalconstant LEVEL_PAGE_SIZE (* LEVEL_PAGE_SIZE_KB 1024)) ;; original value
 
 (defglobalconstant LEVEL_HEAP_SIZE (* NUM_LEVEL_PAGES LEVEL_PAGE_SIZE))
-;(defglobalconstant DEBUG_LEVEL_HEAP_MULT 1.5) ;; level heap in debug mode is 1.5x larger
-(defglobalconstant DEBUG_LEVEL_HEAP_MULT 1.1) ;; we're gonna use debug mode-style heaps but we don't actually need them at 1.5x size right now
-(defglobalconstant DEBUG_LEVEL_PAGE_SIZE (* 1024 (* DEBUG_LEVEL_HEAP_MULT LEVEL_PAGE_SIZE_KB)))
+;; ARM64 function/data objects are larger than the x86-64 objects and need
+;; more room inside each level bank. Keep the established x86 multiplier.
+(defglobalconstant DEBUG_LEVEL_HEAP_MULT (#if ARM64_TARGET 1.75 1.1))
+;; Keep the ARM64 page size integral.  The float-derived value is preserved for
+;; the existing x86 path, but using it in integer pointer arithmetic makes the
+;; ARM64 emitter/runtime boundary ambiguous.
+(defglobalconstant DEBUG_LEVEL_PAGE_SIZE
+  (#if ARM64_TARGET (/ (* LEVEL_PAGE_SIZE 7) 4)
+                     (* 1024 (* DEBUG_LEVEL_HEAP_MULT LEVEL_PAGE_SIZE_KB))))
 (defglobalconstant DEBUG_LEVEL_HEAP_SIZE (* NUM_LEVEL_PAGES DEBUG_LEVEL_PAGE_SIZE))
 
 ;; multiplier for borrow heap size. It is a bit of a hack required to load the slightly larger PC port levels.
@@ -569,7 +575,8 @@ into 7 sections, which might explain the weird sizes in the center.
 
   ;; if any linking is in progress, do that first.
   (when (-> this linking)
-    (when (nonzero? (link-resume)) ;; run linker
+    (let ((link-status (link-resume))) ;; run linker
+      (when (= link-status LINK_STATUS_COMPLETE)
       ;; linker return is nonzero, we're done!
       (start-debug "link done!~%")
       (set! (-> this linking) #f)
@@ -604,6 +611,12 @@ into 7 sections, which might explain the weird sizes in the center.
          (level-status-update! this 'loading-done)
          (level-status-update! this 'loaded)
          )
+        )
+      )
+      (when (= link-status LINK_STATUS_FAILED)
+        (format 0 "ERROR: level linker failed for ~A; aborting load.~%" (-> this name))
+        (set! (-> this linking) #f)
+        (unload! this)
         )
       )
     (set! this this)
@@ -650,8 +663,15 @@ into 7 sections, which might explain the weird sizes in the center.
               ((= (-> this load-buffer-mode) (load-buffer-mode borrow))
 
                ;; start the linker. in "borrow" mode, load directly to the heap again.
-               (cond
-                 ((dgo-load-link (the-as dgo-header s5-0) (-> this heap) (the-as uint (-> this heap top-base)) *print-login* #f)
+               (let ((link-status
+                       (dgo-load-link
+                         (the-as dgo-header s5-0)
+                         (-> this heap)
+                         (the-as uint (-> this heap top-base))
+                         *print-login*
+                         #f)))
+                 (cond
+                 ((= link-status LINK_STATUS_COMPLETE)
                   ;; linker finished immediately, kick off next load
                   (when (not (-> *texture-relocate-later* memcpy))
                     (let ((a2-8 (logand -64 (&+ (-> this heap current) 63))))
@@ -659,31 +679,52 @@ into 7 sections, which might explain the weird sizes in the center.
                       )
                     )
                   )
+                 ((= link-status LINK_STATUS_FAILED)
+                  (format 0 "ERROR: level linker failed for ~A; aborting load.~%" (-> this name))
+                  (unload! this)
+                  )
                  (else
                    ;; linker still going, remember and come back later.
                    (set! (-> this linking) #t)
                    )
                  )
-               )
+                 )
+              )
 
               ;; not borrow mode, start linker
-              ((dgo-load-link (the-as dgo-header s5-0) (-> this heap) (-> this load-buffer 1) *print-login* #f)
-               ;; finished immediately, kick off next loa
-               (when (not (-> *texture-relocate-later* memcpy))
-                 (load-buffer-resize this (the-as dgo-header s5-0))
-                 (dgo-load-continue
-                   (the-as pointer (-> this load-buffer 0))
-                   (the-as pointer (-> this load-buffer 1))
-                   (logand -64 (&+ (-> this heap current) 63))
-                   )
-                 )
-               )
               (else
-                ;; otherwise remember we're loading.
-                (set! (-> this linking) #t)
+                (let ((link-status
+                        (dgo-load-link
+                          (the-as dgo-header s5-0)
+                          (-> this heap)
+                          (-> this load-buffer 1)
+                          *print-login*
+                          #f)))
+                  (cond
+                  ((= link-status LINK_STATUS_COMPLETE)
+                   ;; finished immediately, kick off next load
+                   (when (not (-> *texture-relocate-later* memcpy))
+                     (load-buffer-resize this (the-as dgo-header s5-0))
+                     (dgo-load-continue
+                       (the-as pointer (-> this load-buffer 0))
+                       (the-as pointer (-> this load-buffer 1))
+                       (logand -64 (&+ (-> this heap current) 63))
+                       )
+                     )
+                   )
+                  ((= link-status LINK_STATUS_FAILED)
+                   (format 0 "ERROR: level linker failed for ~A; aborting load.~%" (-> this name))
+                   (unload! this)
+                   )
+                  (else
+                    ;; otherwise remember we're loading.
+                    (set! (-> this linking) #t)
+                    )
+                  )
                 )
               )
             )
+           )
 
            (else
              ;; we are the last object. update heap top and go to bt load.
@@ -701,14 +742,26 @@ into 7 sections, which might explain the weird sizes in the center.
     (('loading-bt)
      ;; last object was loaded, start linking it.
      (let ((a0-36 (logand -64 (&+ (-> this heap current) 63))))
-       (cond
-         ((dgo-load-link (the-as dgo-header a0-36) (-> this heap) (the-as uint (-> this heap top-base)) *print-login* #t)
+       (let ((link-status
+               (dgo-load-link
+                 (the-as dgo-header a0-36)
+                 (-> this heap)
+                 (the-as uint (-> this heap top-base))
+                 *print-login*
+                 #t)))
+         (cond
+         ((= link-status LINK_STATUS_COMPLETE)
           (level-status-update! this 'loading-done)
           (level-status-update! this 'loaded)
+          )
+         ((= link-status LINK_STATUS_FAILED)
+          (format 0 "ERROR: level linker failed for ~A; aborting load.~%" (-> this name))
+          (unload! this)
           )
          (else
            (set! (-> this linking) #t)
            )
+         )
          )
        )
      )

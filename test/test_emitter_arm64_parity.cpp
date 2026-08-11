@@ -517,17 +517,20 @@ TEST(ARM64EmitterParity, VectorMath) {
     std::function<float(float, float)> model;
   };
   std::vector<Case> cases = {
-      {"add", [](CodeTester& t) { t.emit(add_vf(V2, V0, V1)); }, [](float x, float y) { return x + y; }},
-      {"sub", [](CodeTester& t) { t.emit(sub_vf(V2, V0, V1)); }, [](float x, float y) { return x - y; }},
-      {"mul", [](CodeTester& t) { t.emit(mul_vf(V2, V0, V1)); }, [](float x, float y) { return x * y; }},
-      {"div", [](CodeTester& t) { t.emit(div_vf(V2, V0, V1)); }, [](float x, float y) { return x / y; }},
-      {"min", [](CodeTester& t) { t.emit(min_vf(V2, V0, V1)); }, [](float x, float y) { return std::min(x, y); }},
-      {"max", [](CodeTester& t) { t.emit(max_vf(V2, V0, V1)); }, [](float x, float y) { return std::max(x, y); }},
+      {"add", [](CodeTester& t) { t.emit(add_vf(V2, V0, V4)); }, [](float x, float y) { return x + y; }},
+      {"sub", [](CodeTester& t) { t.emit(sub_vf(V2, V0, V4)); }, [](float x, float y) { return x - y; }},
+      {"mul", [](CodeTester& t) { t.emit(mul_vf(V2, V0, V4)); }, [](float x, float y) { return x * y; }},
+      {"div", [](CodeTester& t) { t.emit(div_vf(V2, V0, V4)); }, [](float x, float y) { return x / y; }},
+      {"min", [](CodeTester& t) { t.emit(min_vf(V2, V0, V4)); }, [](float x, float y) { return std::min(x, y); }},
+      {"max", [](CodeTester& t) { t.emit(max_vf(V2, V0, V4)); }, [](float x, float y) { return std::max(x, y); }},
   };
   for (auto& c : cases) {
     CodeTester t(InstructionSet::ARM64);
     t.init_code_buffer(256);
     load_src_vecs(t);
+    // Exercise an even-numbered Rm. The opcode base must leave all five Rm
+    // bits clear before the operand field is inserted.
+    t.emit(mov_vf_vf(V4, V1));
     c.emit(t);
     t.emit(umov_gpr64_vf_d(X0, V2, 0));
     t.emit_return();
@@ -707,8 +710,9 @@ TEST(ARM64EmitterParity, Nops) {
   t.emit(nop());
   t.emit(nop_vf());
   t.emit(wait_vf());
-  t.emit(null());  // ARM64 null() emits zero bytes (x86 emits a 1-byte xchg nop)
-  EXPECT_EQ(t.dump_to_hex_string(), "1f 20 03 d5 1f 20 03 d5 1f 20 03 d5");
+  t.emit(null());  // ARM64 null() is a safe NOP (x86 emits a 1-byte xchg nop)
+  EXPECT_EQ(t.dump_to_hex_string(),
+            "1f 20 03 d5 1f 20 03 d5 1f 20 03 d5 1f 20 03 d5");
 }
 
 TEST(ARM64EmitterParity, StackPushPop) {
@@ -895,6 +899,39 @@ TEST(ARM64EmitterParity, SimdMemoryRoundTrip) {
 #endif
 }
 
+TEST(ARM64EmitterParity, SimdIndexedAddressUsesEvenRm) {
+  // The register-offset LDR/STR encodings must leave Rm clear in the opcode
+  // base.  Odd Rm values masked the old bug because the literal had Rm=1
+  // pre-encoded; an even register was silently changed to the following one.
+  CodeTester encoding(InstructionSet::ARM64);
+  encoding.init_code_buffer(256);
+  encoding.emit(IGen::storevf_gpr64_plus_gpr64(encoding.generator(), V0, X2, X4));
+  encoding.emit(IGen::loadvf_gpr64_plus_gpr64(encoding.generator(), V1, X2, X4));
+  EXPECT_EQ(encoding.dump_to_hex_string(), "40 68 a4 3c 41 68 e4 3c");
+
+#if defined(__aarch64__)
+  CodeTester t(InstructionSet::ARM64);
+  t.init_code_buffer(256);
+  t.emit(ins_vf_d_gpr(V0, 0, X0));
+  t.emit(ins_vf_d_gpr(V0, 1, X1));
+  t.emit(IGen::mov_gpr64_u64(t.generator(), X4, 0));
+  t.emit(IGen::mov_gpr64_u64(t.generator(), X5, 16));
+  t.emit(IGen::storevf_gpr64_plus_gpr64(t.generator(), V0, X2, X4));
+  t.emit(IGen::loadvf_gpr64_plus_gpr64(t.generator(), V1, X2, X4));
+  t.emit(umov_gpr64_vf_d(X0, V1, 0));
+  t.emit_return();
+
+  alignas(16) u64 buf[4] = {0, 0, 0, 0};
+  const u64 lo = 0x1122334455667788ull;
+  const u64 hi = 0x99aabbccddeeff00ull;
+  EXPECT_EQ(run_fn(t, lo, hi, reinterpret_cast<u64>(buf), 0), lo);
+  EXPECT_EQ(buf[0], lo);
+  EXPECT_EQ(buf[1], hi);
+  EXPECT_EQ(buf[2], 0u);
+  EXPECT_EQ(buf[3], 0u);
+#endif
+}
+
 TEST(ARM64EmitterParity, VectorConversionsAndSqrt) {
 #if defined(__aarch64__)
   // itof_vf: convert 4 int32 lanes to floats.
@@ -981,7 +1018,7 @@ TEST(ARM64EmitterParity, ParallelCompareAndExtract) {
     // (0x02, 0x03) exceed b's 0x01 -> 0xFFFF in the high half of d[0].
     EXPECT_EQ(r, 0xFFFF000000000000ull);
   }
-  // pextlb_swapped (byte unzip, low)
+  // pextlb_swapped == vpunpcklbw (zip1 16B)
   {
     CodeTester t(InstructionSet::ARM64);
     t.init_code_buffer(256);
@@ -991,9 +1028,8 @@ TEST(ARM64EmitterParity, ParallelCompareAndExtract) {
     t.emit_return();
     u64 a = 0x1122334455667788ull, b = 0xAABBCCDDEEFF0001ull;
     u64 r = run_fn(t, a, 0, b, 0);
-    // UZP1: vd.b[i] = v0.b[2i] (even bytes of the first source)
-    EXPECT_EQ((u8)(r & 0xFF), (u8)0x88);  // v0.b0
-    EXPECT_EQ((u8)(r >> 8), (u8)0x66);    // v0.b2
+    // ZIP1: a0, b0, a1, b1, a2, b2, a3, b3 in the low 64 bits.
+    EXPECT_EQ(r, 0xEE55FF6600770188ull);
   }
   // pcpyld_swapped == vpunpcklqdq (zip1 2D)
   {
@@ -1180,7 +1216,19 @@ TEST(ARM64EmitterParity, ParallelCompareAndExtractMore) {
     t.emit_return();
     EXPECT_EQ(run_fn(t, c.a, 0, c.b, 0), c.expect_lo) << c.name;
   }
-  // pextlh/lw/ub/uh/uw
+  // PS2 pext lower/upper operations map to x86 PUNPCK and ARM ZIP.  Keep both
+  // inputs observably different: the previous tests checked only the first
+  // lane and therefore could not distinguish ZIP from the incorrect UZP.
+  {
+    CodeTester t(InstructionSet::ARM64);
+    t.init_code_buffer(256);
+    load_src_vecs(t);
+    t.emit(pextlb_swapped(V2, V0, V1));
+    t.emit(umov_gpr64_vf_d(X0, V2, 0));
+    t.emit_return();
+    EXPECT_EQ(run_fn(t, 0x0807060504030201ull, 0, 0x1817161514131211ull, 0),
+              0x1404130312021101ull);
+  }
   {
     CodeTester t(InstructionSet::ARM64);
     t.init_code_buffer(256);
@@ -1188,10 +1236,8 @@ TEST(ARM64EmitterParity, ParallelCompareAndExtractMore) {
     t.emit(pextlh_swapped(V2, V0, V1));
     t.emit(umov_gpr64_vf_d(X0, V2, 0));
     t.emit_return();
-    u64 a = 0x0002000100020001ull, b = 0x0004000300040003ull;
-    u64 r = run_fn(t, a, 0, b, 0);
-    // UZP1 halfwords: even halfwords of v0: 0x0001, 0x0001
-    EXPECT_EQ((u16)r, 1u);
+    EXPECT_EQ(run_fn(t, 0x0004000300020001ull, 0, 0x0014001300120011ull, 0),
+              0x0012000200110001ull);
   }
   {
     CodeTester t(InstructionSet::ARM64);
@@ -1200,9 +1246,8 @@ TEST(ARM64EmitterParity, ParallelCompareAndExtractMore) {
     t.emit(pextlw_swapped(V2, V0, V1));
     t.emit(umov_gpr64_vf_d(X0, V2, 0));
     t.emit_return();
-    u64 a = 0x0000000200000001ull;
-    u64 r = run_fn(t, a, 0, 0, 0);
-    EXPECT_EQ((u32)r, 1u);
+    EXPECT_EQ(run_fn(t, 0x0000000200000001ull, 0, 0x0000001200000011ull, 0),
+              0x0000001100000001ull);
   }
   {
     CodeTester t(InstructionSet::ARM64);
@@ -1211,10 +1256,8 @@ TEST(ARM64EmitterParity, ParallelCompareAndExtractMore) {
     t.emit(pextub_swapped(V2, V0, V1));
     t.emit(umov_gpr64_vf_d(X0, V2, 0));
     t.emit_return();
-    u64 a = 0x1122334455667788ull, b = 0xAABBCCDDEEFF0001ull;
-    u64 r = run_fn(t, a, 0, b, 0);
-    // pextub = UZP2: odd bytes of v0 -> b1 = 0x77
-    EXPECT_EQ((u8)r, (u8)0x77);
+    EXPECT_EQ(run_fn(t, 0, 0x100f0e0d0c0b0a09ull, 0, 0x201f1e1d1c1b1a19ull),
+              0x1c0c1b0b1a0a1909ull);
   }
   {
     CodeTester t(InstructionSet::ARM64);
@@ -1223,10 +1266,8 @@ TEST(ARM64EmitterParity, ParallelCompareAndExtractMore) {
     t.emit(pextuh_swapped(V2, V0, V1));
     t.emit(umov_gpr64_vf_d(X0, V2, 0));
     t.emit_return();
-    u64 a = 0x0002000100020001ull;
-    u64 r = run_fn(t, a, 0, 0, 0);
-    // pextuh = UZP2: odd halfword of v0 -> h1 = 2
-    EXPECT_EQ((u16)r, 2u);
+    EXPECT_EQ(run_fn(t, 0, 0x0008000700060005ull, 0, 0x0018001700160015ull),
+              0x0016000600150005ull);
   }
   {
     CodeTester t(InstructionSet::ARM64);
@@ -1235,10 +1276,8 @@ TEST(ARM64EmitterParity, ParallelCompareAndExtractMore) {
     t.emit(pextuw_swapped(V2, V0, V1));
     t.emit(umov_gpr64_vf_d(X0, V2, 0));
     t.emit_return();
-    u64 a = 0x0000000200000001ull;
-    u64 r = run_fn(t, a, 0, 0, 0);
-    // pextuw = UZP2: odd word of v0 -> s1 = 2
-    EXPECT_EQ((u32)r, 2u);
+    EXPECT_EQ(run_fn(t, 0, 0x0000000400000003ull, 0, 0x0000001400000013ull),
+              0x0000001300000003ull);
   }
 #endif
 }

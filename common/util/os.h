@@ -19,3 +19,6 @@ struct CpuInfo {
 CpuInfo& get_cpu_info();
 
 std::optional<double> get_macos_major_version();
+
+// Returns true when an Apple ARM64 process is being translated by Rosetta 2.
+bool is_process_translated();

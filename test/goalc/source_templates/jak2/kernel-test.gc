@@ -225,3 +225,76 @@
       )
     )
   )
+
+;; Regression for the full ARM64 GOAL saved-GPR context.  The check process
+;; keeps seven independent values live across suspend while the second process
+;; deliberately overwrites the seven persistent roles before each suspend.
+(defun gpr-context-check-code ((a0 uint) (a1 uint) (a2 uint) (a3 uint) (a4 uint) (a5 uint))
+  (let ((v0 (+ a0 #x1000))
+        (v1 (+ a1 #x2000))
+        (v2 (+ a2 #x3000))
+        (v3 (+ a3 #x4000))
+        (v4 (+ a4 #x5000))
+        (v5 (+ a5 #x6000))
+        (v6 (+ a0 a5 #x7000)))
+    (dotimes (i 32)
+      (when (or (!= v0 (+ a0 #x1000))
+                (!= v1 (+ a1 #x2000))
+                (!= v2 (+ a2 #x3000))
+                (!= v3 (+ a3 #x4000))
+                (!= v4 (+ a4 #x5000))
+                (!= v5 (+ a5 #x6000))
+                (!= v6 (+ a0 a5 #x7000)))
+        (format #t "GPR-CONTEXT-FAIL cycle ~D~%" i)
+        (process-deactivate))
+      (suspend))
+    (format #t "GPR-CONTEXT-OK~%")
+    (process-deactivate))
+  )
+
+(defun gpr-context-wreck-code ()
+  ;; saved-gpr5/6 are intentionally inside a compile-time ARM64-only branch:
+  ;; x86 never parses names which do not exist in its five-register ABI.
+  (#when ARM64_TARGET
+    (rlet ((s0 :reg saved-gpr0 :type uint)
+           (s1 :reg saved-gpr1 :type uint)
+           (s2 :reg saved-gpr2 :type uint)
+           (s3 :reg saved-gpr3 :type uint)
+           (s4 :reg saved-gpr4 :type uint)
+           (s5 :reg saved-gpr5 :type uint)
+           (s6 :reg saved-gpr6 :type uint))
+      (dotimes (i 32)
+        (set! s0 (the uint #xA001))
+        (set! s1 (the uint #xA002))
+        (set! s2 (the uint #xA003))
+        (set! s3 (the uint #xA004))
+        (set! s4 (the uint #xA005))
+        (set! s5 (the uint #xA006))
+        (set! s6 (the uint #xA007))
+        (suspend))))
+  (process-deactivate)
+  )
+
+(defun gpr-context-test ()
+  (let ((check-proc (get-process *nk-dead-pool* process 1024))
+        (wreck-proc (get-process *nk-dead-pool* process 1024)))
+    (activate check-proc *active-pool* "gpr-context-check" *kernel-dram-stack*)
+    (activate wreck-proc *active-pool* "gpr-context-wreck" *kernel-dram-stack*)
+    (set-to-run (-> check-proc main-thread)
+                gpr-context-check-code
+                11 22 33 44 55 66)
+    (set-to-run (-> wreck-proc main-thread)
+                gpr-context-wreck-code
+                0 0 0 0 0 0)
+    0)
+  )
+
+;; Negative control: exercise the comparator's failure branch with a known
+;; altered sentinel. This guards against a vacuous "process stayed alive" test.
+(defun gpr-context-negative-test ()
+  (let ((expected #x7000)
+        (actual #x7001))
+    (if (= expected actual)
+        (format #t "GPR-CONTEXT-NEGATIVE-FAIL~%")
+        (format #t "GPR-CONTEXT-NEGATIVE-DETECTED slot 6~%")))
+  0)

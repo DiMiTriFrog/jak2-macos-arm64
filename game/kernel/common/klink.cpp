@@ -29,6 +29,21 @@ void klink_init_globals() {
   gfunc_774.offset = 0;
 }
 
+void link_control::fail() {
+  if (m_heap.offset) {
+    if (m_heap_current.offset) {
+      m_heap->current = m_heap_current;
+    }
+    if (m_heap_top.offset) {
+      m_heap->top = m_heap_top;
+    }
+  }
+
+  m_entry.offset = 0;
+  m_status = LinkStatus::Failed;
+  m_busy = false;
+}
+
 /*!
  * Initialize the link control.
  * TODO: this hasn't been carefully checked for jak 2 differences.
@@ -48,10 +63,12 @@ void link_control::jak1_jak2_begin(Ptr<uint8_t> object_file,
 
     // initialize link control
     m_entry.offset = 0;
+    m_heap_current = m_heap->current;
     m_heap_top = m_heap->top;
     m_keep_debug = false;
     m_opengoal = true;
     m_busy = true;
+    m_status = LinkStatus::InProgress;
 
     if (link_debug_printfs) {
       char* goal_name = object_file.cast<char>().c();
@@ -154,6 +171,7 @@ void link_control::jak1_jak2_begin(Ptr<uint8_t> object_file,
     m_heap = heap;
     m_flags = flags;
     m_entry.offset = 0;
+    m_heap_current = m_heap->current;
     m_heap_top = m_heap->top;
     m_keep_debug = false;
     m_link_block_ptr = object_file + BASIC_OFFSET;
@@ -161,6 +179,7 @@ void link_control::jak1_jak2_begin(Ptr<uint8_t> object_file,
     m_code_start = object_file;
     m_state = 0;
     m_segment_process = 0;
+    m_status = LinkStatus::InProgress;
 
     const auto* header = (LinkHeaderV2*)(m_link_block_ptr.c() - 4);
 

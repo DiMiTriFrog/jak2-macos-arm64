@@ -498,7 +498,7 @@ class IR_StoreConstOffset : public IR_Asm {
 
 class IR_AsmRet : public IR_Asm {
  public:
-  IR_AsmRet(bool use_coloring);
+  IR_AsmRet(bool use_coloring, bool returns_value);
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
@@ -507,6 +507,9 @@ class IR_AsmRet : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+
+ private:
+  bool m_returns_value = false;
 };
 
 class IR_AsmPush : public IR_Asm {

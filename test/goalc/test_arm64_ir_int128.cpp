@@ -102,14 +102,15 @@ V128 expected_math3(IR_Int128Math3Asm::Kind kind, V128 src1, V128 src2) {
           : (kind == IR_Int128Math3Asm::Kind::PEXTUH || kind == IR_Int128Math3Asm::Kind::PEXTLH)
               ? 2
               : 4;
-      const int source_lane = upper ? 1 : 0;
       const int count = 8 / unit;
       // The ARM emitter receives (src2, src1) for the *_swapped operations;
-      // UZP therefore contributes src2's selected lanes first.
+      // match x86 VPUNPCK by interleaving the selected lower/upper half with
+      // src2 first and src1 second.
+      const int source_base = upper ? count : 0;
       for (int lane = 0; lane < count; lane++) {
         for (int byte = 0; byte < unit; byte++) {
-          out[lane * unit + byte] = b[(2 * lane + source_lane) * unit + byte];
-          out[(count + lane) * unit + byte] = a[(2 * lane + source_lane) * unit + byte];
+          out[(2 * lane) * unit + byte] = b[(source_base + lane) * unit + byte];
+          out[(2 * lane + 1) * unit + byte] = a[(source_base + lane) * unit + byte];
         }
       }
       break;

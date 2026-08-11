@@ -853,12 +853,34 @@
                                                      )
                       )
                 )
-              (dotimes (v1-23 6)
-                (set! (-> *load-state* want v1-23 name) (-> gp-0 want v1-23 name))
-                (set! (-> *load-state* want v1-23 display?) (-> gp-0 want v1-23 display?))
-                (set! (-> *load-state* want v1-23 force-vis?) #f)
-                (set! (-> *load-state* want v1-23 force-inside?) #f)
-                )
+              ;; ARM64 currently miscompiles a variable-index access through a
+              ;; packed inline array when the destination is written in the
+              ;; same expression. Keep these six fixed-size copies explicit;
+              ;; each level-buffer-state is exactly 16 bytes in the GOAL ABI.
+              (mem-copy! (the-as pointer (-> *load-state* want 0))
+                         (the-as pointer (-> gp-0 want 0)) 16)
+              (mem-copy! (the-as pointer (-> *load-state* want 1))
+                         (the-as pointer (-> gp-0 want 1)) 16)
+              (mem-copy! (the-as pointer (-> *load-state* want 2))
+                         (the-as pointer (-> gp-0 want 2)) 16)
+              (mem-copy! (the-as pointer (-> *load-state* want 3))
+                         (the-as pointer (-> gp-0 want 3)) 16)
+              (mem-copy! (the-as pointer (-> *load-state* want 4))
+                         (the-as pointer (-> gp-0 want 4)) 16)
+              (mem-copy! (the-as pointer (-> *load-state* want 5))
+                         (the-as pointer (-> gp-0 want 5)) 16)
+              (set! (-> *load-state* want 0 force-vis?) #f)
+              (set! (-> *load-state* want 0 force-inside?) #f)
+              (set! (-> *load-state* want 1 force-vis?) #f)
+              (set! (-> *load-state* want 1 force-inside?) #f)
+              (set! (-> *load-state* want 2 force-vis?) #f)
+              (set! (-> *load-state* want 2 force-inside?) #f)
+              (set! (-> *load-state* want 3 force-vis?) #f)
+              (set! (-> *load-state* want 3 force-inside?) #f)
+              (set! (-> *load-state* want 4 force-vis?) #f)
+              (set! (-> *load-state* want 4 force-inside?) #f)
+              (set! (-> *load-state* want 5 force-vis?) #f)
+              (set! (-> *load-state* want 5 force-inside?) #f)
               (update-task-masks 'event)
               )
             )
@@ -930,27 +952,27 @@
       ;; og:preserve-this
       ;; NOTE - for speedrunner mode, allows the game to continue
       ;; even if there is a dialogue in progress
-      (until (not (or (-> *setting-control* user-current spooling)
+      (until (not (or (!= (-> *setting-control* user-current spooling) (the-as (pointer process) #f))
                       (when (not (-> *pc-settings* speedrunner-mode?))
-                        (or (-> *setting-control* user-current talking)
-                            (-> *setting-control* user-current hint)
-                            (-> *setting-control* user-current ambient)))))
+                        (or (!= (-> *setting-control* user-current talking) (the-as (pointer process) #f))
+                            (!= (-> *setting-control* user-current hint) (the-as (pointer process) #f))
+                            (!= (-> *setting-control* user-current ambient) (the-as (pointer process) #f))))))
         (set-setting! 'allow-progress #f 0.0 0)
         (apply-settings *setting-control*)
         (dotimes (s4-0 2)
           ;; og:preserve-this
           ;; NOTE - for speedrunner mode, allows the game to continue
           ;; even if there is a dialogue in progress
-          (while (or (-> *setting-control* user-current spooling)
+          (while (or (!= (-> *setting-control* user-current spooling) (the-as (pointer process) #f))
                      (when (not (-> *pc-settings* speedrunner-mode?))
-                        (or (-> *setting-control* user-current talking)
-                            (-> *setting-control* user-current hint)
-                            (-> *setting-control* user-current ambient)))
-                     (or (and (-> *setting-control* user-current movie)
+                        (or (!= (-> *setting-control* user-current talking) (the-as (pointer process) #f))
+                            (!= (-> *setting-control* user-current hint) (the-as (pointer process) #f))
+                            (!= (-> *setting-control* user-current ambient) (the-as (pointer process) #f))))
+                     (or (and (!= (-> *setting-control* user-current movie) (the-as (pointer process) #f))
                               (!= (-> *setting-control* user-current movie) (process->ppointer self))
                               )
-                         *progress-process*
-                         (!= (get-status *gui-control* (-> self gui-id)) 3)
+                         (!= *progress-process* (the-as (pointer process) #f))
+                         (!= (get-status *gui-control* (-> self gui-id)) (gui-status active))
                          )
                      )
             (suspend)
@@ -1606,6 +1628,13 @@
         )
   (set! *scene-player* (the-as (pointer scene-player) (process->ppointer self)))
   (set! *display-entity-errors* #f)
+  ;; A scene that enters the wait state must hold the same settings as an
+  ;; actively playing scene.  In particular, title-disk-intro waits before
+  ;; scene-player-method-23 runs; without this ownership, region-mode falls
+  ;; back to its default and an unrelated city region unloads the title level.
+  (when (and arg1 (-> self scene))
+    (set-setting! 'region-mode #f 0.0 0)
+    )
   (set-setting! 'speech-control #f 0.0 0)
   (set-setting! 'allow-progress #f 0.0 0)
   (apply-settings *setting-control*)

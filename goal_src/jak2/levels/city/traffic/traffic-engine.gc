@@ -150,8 +150,34 @@
         (.add.x.vf.xyz vf5 vf4 vf6)
         (.svf (&-> a0-2 quad) vf5)
         )
+      ;; A bounding box is an interval on each axis.  Keep that invariant here
+      ;; before converting its endpoints to grid cells: downstream callers use
+      ;; countdown loops that require min <= max.  This is normally already
+      ;; true from the VU sequence above, but normalizing the endpoints also
+      ;; makes the grid lookup correct if a backend produces them in reverse.
+      (dotimes (s4-0 3)
+        (when (> (-> s5-0 min data s4-0) (-> s5-0 max data s4-0))
+          (let ((a0-3 (-> s5-0 min data s4-0)))
+            (set! (-> s5-0 min data s4-0) (-> s5-0 max data s4-0))
+            (set! (-> s5-0 max data s4-0) a0-3)
+            )
+          )
+        )
       (lookup-cell-for-point this (-> arg0 min) (-> s5-0 min))
       (lookup-cell-for-point this (-> arg0 max) (-> s5-0 max))
+      ;; The integer conversion and clamping above are the final authority for
+      ;; the grid interval.  Keep the resulting cell coordinates ordered too:
+      ;; sphere-in-grid? derives unsigned-style trip counts from this box, and
+      ;; an inverted endpoint otherwise turns a small lookup into an infinite
+      ;; loop (observed as min.x=17, max.x=0 on native ARM64).
+      (dotimes (s4-1 3)
+        (when (> (-> arg0 min data s4-1) (-> arg0 max data s4-1))
+          (let ((a0-4 (-> arg0 min data s4-1)))
+            (set! (-> arg0 min data s4-1) (-> arg0 max data s4-1))
+            (set! (-> arg0 max data s4-1) a0-4)
+            )
+          )
+        )
       )
     0
     (none)

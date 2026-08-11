@@ -36,6 +36,10 @@ extern "C" u64 sum_packed(const u64* args) {
   return result;
 }
 
+extern "C" u64 first_packed(const u64* args) {
+  return args[0];
+}
+
 extern "C" __attribute__((naked)) u64 invoke_with_pp(void*, u64, u64, u64, u64) {
   asm("stp x20, x30, [sp, #-16]!\n"
       "mov x9, x0\n"
@@ -106,10 +110,9 @@ TEST(ARM64Trampoline, EmitsRelocatableLiteralCall) {
 
   ASSERT_EQ(size, 40u);
   EXPECT_EQ(read_word(code, 0), arm64_trampoline::encode_ldr_literal_x16(0, 24));
-  EXPECT_EQ(read_word(code, 4), arm64_trampoline::kSubSp16);
-  EXPECT_EQ(read_word(code, 8), arm64_trampoline::kStrX16Sp);
-  EXPECT_EQ(read_word(code, 12), arm64_trampoline::encode_ldr_literal_x16(12, 32));
-  EXPECT_EQ(read_word(code, 16), arm64_trampoline::kBrX16);
+  EXPECT_EQ(read_word(code, 4), 0xd503201f);
+  EXPECT_EQ(read_word(code, 8), arm64_trampoline::encode_ldr_literal_x17(8, 32));
+  EXPECT_EQ(read_word(code, 12), 0xd61f0220);
   EXPECT_EQ(read_literal(code, 24), reinterpret_cast<uint64_t>(target));
   EXPECT_EQ(read_literal(code, 32), reinterpret_cast<uint64_t>(bridge));
   scope.finish();
@@ -160,6 +163,21 @@ TEST(ARM64Trampoline, StackFunctionReceivesEightArguments) {
   EXPECT_EQ(function(1, 2, 4, 8, 16, 32, 64, 128), 255u);
 }
 
+TEST(ARM64Trampoline, StackFunctionPreservesArgumentOrder) {
+  ExecutablePage page;
+  ASSERT_TRUE(page.valid());
+  auto* code = page.data();
+  auto scope = page.write_scope();
+  const auto size = arm64_trampoline::emit_stack_function(code, function_address(&first_packed),
+                                                          function_address(_stack_call_arm64));
+  scope.finish();
+  page.make_executable(size);
+
+  using Function = u64 (*)(u64, u64, u64, u64, u64, u64, u64, u64);
+  auto function = reinterpret_cast<Function>(code);
+  EXPECT_EQ(function(0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88), 0x11u);
+}
+
 TEST(ARM64Trampoline, NothingAndZeroHaveNativeReturns) {
   ExecutablePage page;
   ASSERT_TRUE(page.valid());
@@ -187,8 +205,10 @@ TEST(ARM64Trampoline, Mips2cLayoutKeepsFullAddressAndStackSize) {
   const auto size = arm64_trampoline::emit_mips2c(code, 0x12345, target, bridge);
 
   ASSERT_EQ(size, 56u);
-  EXPECT_EQ(read_word(code, 0), arm64_trampoline::encode_ldr_literal_x16(0, 32));
-  EXPECT_EQ(read_word(code, 16), arm64_trampoline::kStrX16Sp8);
+  EXPECT_EQ(read_word(code, 0), arm64_trampoline::encode_ldr_literal_x17(0, 32));
+  EXPECT_EQ(read_word(code, 4), arm64_trampoline::encode_ldr_literal_x16(4, 40));
+  EXPECT_EQ(read_word(code, 8), arm64_trampoline::encode_ldr_literal(0x58000000 | 15, 8, 48));
+  EXPECT_EQ(read_word(code, 12), arm64_trampoline::kBrX15);
   EXPECT_EQ(read_literal(code, 32), 0x12345u);
   EXPECT_EQ(read_literal(code, 40), reinterpret_cast<uint64_t>(target));
   EXPECT_EQ(read_literal(code, 48), reinterpret_cast<uint64_t>(bridge));
