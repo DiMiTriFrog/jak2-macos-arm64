@@ -476,7 +476,6 @@
   To make sure this happens, all ops should be asm ops and we should have no
   GOAL expressions."
   (declare (asm-func none)
-                                        ;(print-asm)
            )
   (with-context-extra-saved-gprs
     (rlet ((sp :reg rsp :type uint)
@@ -529,7 +528,6 @@
   "Like return from thread, but we clean up our process with deactivate first.
   The return register is not preserved here, instead we return the value of deactivate"
   (declare (asm-func none)
-                                        ;(print-asm)
            )
   (with-context-extra-saved-gprs
     (rlet ((pp :reg r13 :type process)
@@ -812,7 +810,6 @@
    This is also used to start a thread initialized with set-to-run.
    As a result of MIPS/x86 differences, there is a hack for this."
   (declare (asm-func none)
-           ;;(print-asm)
            )
 
   (with-context-extra-saved-gprs
@@ -1994,6 +1991,14 @@
       (.push :color #f s2)
       (set! s3 (the uint func))
       (set! s2 param-block)
+      ;; ARM64: the BL to func will clobber x30.  Rebuild the caller's
+      ;; continuation up front in the callee-saved s4 register so the normal
+      ;; return path can branch to it without keeping `this` live across the
+      ;; call (which would force a stack spill in this asm-func).
+      (#when ARM64_TARGET
+        (set! s4 (the uint (-> this ra)))
+        (.add s4 off)
+        )
 
       ;; todo - are we aligned correctly here?
       (let ((ret ((the-super-u64-fucntion s3)
@@ -2009,6 +2014,12 @@
         (.pop :color #f s2)
         (.pop :color #f s3)
         (set! (-> pp stack-frame-top) (-> pp stack-frame-top next))
+        ;; ARM64: branch to the caller's precomputed continuation instead of
+        ;; .ret, which would return to the address left by the BL to func.
+        ;; The GOAL result stays in its historical return register untouched.
+        (#when ARM64_TARGET
+          (.jr :color #f s4)
+          )
         (.ret)
         (the object ret)
         )
@@ -2023,6 +2034,7 @@
 
   (rlet ((pp :reg r13 :type process)
          (temp :reg rax :type uint)
+         (return-value :reg rdi :type uint)
          (off :reg r15 :type uint)
          (sp :reg rsp :type uint)
          (s0 :reg rbx :type uint)
@@ -2084,7 +2096,15 @@
     (.add temp off)
     (.push :color #f temp)
 
-    ;; load the return register
+    ;; load the return register.  Normal GOAL calls on ARM64 receive their
+    ;; scalar result in x0 (the historical x86 rdi role), while x8 is only the
+    ;; temporary/return register used by asm forms.  The x86 path must retain
+    ;; its historical rax result.
+    (#when ARM64_TARGET
+      ;; This move is intentionally colored: `value` is a function parameter,
+      ;; not an rlet alias, while the destination is the fixed ARM64 x0 role.
+      (.mov return-value value)
+      )
     (.mov temp value)
     (.ret)
     )
@@ -2386,7 +2406,6 @@
    It also creates a return trampoline to return-from-thread-dead, so if the main thread returns, the
    process is properly cleaned up by deactivate."
   (declare (asm-func none)
-           ;;(print-asm)
            )
 
   (with-context-extra-saved-gprs

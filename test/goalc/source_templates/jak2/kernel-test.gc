@@ -58,80 +58,90 @@
   0
   )
 
-(defun check-current-proc-catch-rbx ()
-  ;; (format 0 "last rbx = ~X~%" *last-rbx*)
-  (with-pp
-    (format 0 "PP = ~X~%" pp)
-    (let ((frame (-> pp stack-frame-top)))
-      (format 0 "FRAME0: ~A~%" frame)
-
-      (while frame
-        (format 0 "FRAME: ~A~%" frame)
-        (when (= (-> frame type) catch-frame)
-          (format 0 "found upcoming protect frame! ~A: ~X~%"
-                  (-> (the catch-frame frame) name)
-                  (-> (the catch-frame frame) rreg 0)
-                  )
-          )
-        (set! frame (-> frame next))
-        )
-      )
-    )
-  )
-
 (defun init-child-proc (a0 a1 a2 a3 a4 a5)
   (format #t "Args: ~D ~D ~D~%" a0 a1 a2)
   (format #t "~D ~D ~D~%" a3 a4 a5)
   (let ((stack-arr (new 'stack-no-clear 'array 'uint8 12)))
-    (format #t "Stack Alignemnt ~D/16~%" (logand 15 (the uint stack-arr)))
-    )
+  (format #t "Stack Alignemnt ~D/16~%" (logand 15 (the uint stack-arr)))
+  )
   (when (eq? a0 (the int 0))
-    (format 0 "doing child proc deactivate~%")
-    (check-current-proc-catch-rbx)
     (process-deactivate)
-    )
+  )
   'init-child-proc-result
   )
 
 
-(defun initializer-process-function (a0)
-  (format 0 "ipf: ~D~%" a0)
+;; Each kernel process under test gets its own private stack region so that no
+;; two processes can alias the same memory.  The stack top is the high end of
+;; the region: [top - PROCESS_STACK_SIZE, top).
+(defun test-stack-tops-overlap ((stacks (pointer pointer)) (count int))
+  (let ((ok #t))
+    (dotimes (i count)
+      (let ((top-a (-> stacks i)))
+        (when top-a
+          (let ((a0 (the int (- (the uint top-a) PROCESS_STACK_SIZE)))
+                (a1 (the int (the uint top-a))))
+            (dotimes (j count)
+              (when (and ok (!= i j) (-> stacks j))
+                (let ((b0 (the int (- (the uint (-> stacks j)) PROCESS_STACK_SIZE)))
+                      (b1 (the int (the uint (-> stacks j)))))
+                  (when (and (< a0 b1) (< b0 a1))
+                    (format 0 "TEST-FAIL: stack ~D [~X, ~X) overlaps ~D [~X, ~X)~%"
+                            i a0 a1 j b0 b1)
+                    (set! ok #f)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    ok
+    )
+  )
+
+(defun initializer-process-function ((a0 int) (child-stack-top (pointer uint8)))
   (let ((child-proc (get-process *nk-dead-pool* process 1024)))
     ;; let's go
-    (activate child-proc *active-pool* "child-proc" *kernel-dram-stack*)
-    (format 0 "child-proc activated...~%")
+    (activate child-proc *active-pool* "child-proc" child-stack-top)
     (let ((result (run-function-in-process child-proc init-child-proc a0 2 3 4 5 6)))
-      (format 0 "child-proc reuslt: ~D~%" result)
       (format #t "run-function-in-process result: ~A~%" result)
       )
     )
 
-  (format 0 "proc-deactivate ~D~%" a0)
-  (rlet ((pp :reg r13 :reset-here #t :type process))
-        ;; (deactivate pp)
-        (format 0 "  proc is: #x~X~%" pp)
-        )
-  (check-current-proc-catch-rbx)
   (process-deactivate)
-  (format 0 "proc-deactivate end?~%")
-
   )
 
 (defun kernel-test-2 ()
-  (define initalizer-process (get-process *nk-dead-pool* process 1024))
-  (activate initalizer-process *active-pool* "initializer-proc" *kernel-dram-stack*)
-  (set-to-run (-> initalizer-process main-thread)
-              initializer-process-function
-              0 0 0 0 0 0
-              )
-  (define initalizer-process-2 (get-process *nk-dead-pool* process 1024))
-  (activate initalizer-process-2 *active-pool* "initializer-proc-2" *kernel-dram-stack*)
-  (set-to-run (-> initalizer-process-2 main-thread)
-              initializer-process-function
-              1 0 0 0 0 0
-              )
-  (format 0 "kt2 return~%")
-  0
+  (let ((stacks (new 'stack-no-clear 'array 'pointer 4)))
+    ;; One private stack per process: two initializers and their two children.
+    ;; malloc 'global keeps each region alive after this function returns.
+    (dotimes (i 4)
+      (let ((stack-block (malloc 'global PROCESS_STACK_SIZE)))
+        (set! (-> stacks i)
+              (&+ (the-as (pointer uint8) stack-block) PROCESS_STACK_SIZE))
+        )
+      )
+    (unless (test-stack-tops-overlap stacks 4)
+      ;; Reaching this branch means the fixture violated stack ownership.
+      ;; Throwing makes the test fail instead of allowing a corrupted process
+      ;; setup to continue into the runtime test.
+      (throw 'initialize #f))
+    (define initalizer-process (get-process *nk-dead-pool* process 1024))
+    (activate initalizer-process *active-pool* "initializer-proc" (-> stacks 0))
+    (set-to-run (-> initalizer-process main-thread)
+                initializer-process-function
+                0 (-> stacks 2) 0 0 0 0
+                )
+    (define initalizer-process-2 (get-process *nk-dead-pool* process 1024))
+    (activate initalizer-process-2 *active-pool* "initializer-proc-2" (-> stacks 1))
+    (set-to-run (-> initalizer-process-2 main-thread)
+                initializer-process-function
+                1 (-> stacks 3) 0 0 0 0
+                )
+    0
+    )
   )
 
 
@@ -147,7 +157,6 @@
 
 (defun xmm-check-code (ax ay az aw)
   "This function relies on saved xmm register being backed up on a context switch"
-  ;; (declare (print-asm))
   ;; compiler will put these in xmm8 and xmm9 to keep them from being clobbered
   (let ((x 12.34)
         (y 45.63))
