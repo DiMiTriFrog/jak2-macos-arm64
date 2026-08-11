@@ -435,6 +435,10 @@ El propietario ha pedido realizar ahora únicamente correcciones y optimización
 La campaña completa, matriz de Macs, mandos físicos, sesiones largas,
 notarización y QA exhaustiva se reservan para la fase final.
 
+El procedimiento operativo ampliado, con pseudocódigo, secuencia de cambios y
+criterios por bloque, está en
+[`evidence/LUNA-PENDING-IMPLEMENTATION-PLAYBOOK.md`](LUNA-PENDING-IMPLEMENTATION-PLAYBOOK.md).
+
 Las comprobaciones unitarias dirigidas siguen siendo obligatorias para no
 introducir regresiones al editar código, pero no sustituyen ni adelantan el QA
 final.
