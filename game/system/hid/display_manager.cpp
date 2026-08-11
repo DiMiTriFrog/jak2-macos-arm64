@@ -1,13 +1,30 @@
 #include "display_manager.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <memory>
 
 #include "sdl_util.h"
 
 #include "common/global_profiler/GlobalProfiler.h"
 
 #include "fmt/format.h"
+
+namespace {
+
+struct SDLFreeDeleter {
+  template <typename T>
+  void operator()(T* pointer) const noexcept {
+    SDL_free(pointer);
+  }
+};
+
+bool window_is_fullscreen(SDL_Window* window) {
+  return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+}
+
+}  // namespace
 
 DisplayManager::DisplayManager(SDL_Window* window) : m_window(window) {
   prof().instant_event("ROOT");
@@ -27,7 +44,13 @@ DisplayManager::DisplayManager(SDL_Window* window) : m_window(window) {
     m_display_settings.load_settings();
     // Adjust window / monitor position
     initialize_window_position_from_settings();
-    set_display_mode(m_display_settings.display_mode, m_window_width, m_window_height);
+    if (!set_display_mode(m_display_settings.display_mode, m_window_width, m_window_height)) {
+      // The process starts windowed. Do not persist a fullscreen preference that
+      // SDL/macOS rejected during startup.
+      m_display_settings.display_mode =
+          game_settings::DisplaySettings::DisplayMode::Windowed;
+      m_display_settings.save_settings();
+    }
   }
 }
 
@@ -44,9 +67,15 @@ DisplayManager::~DisplayManager() {
 }
 
 void DisplayManager::initialize_window_position_from_settings() {
+  if (m_current_display_modes.empty()) {
+    lg::error("[DISPLAY] No display is available to position the window");
+    return;
+  }
+
   // Check that the display id is still valid
   // Not to be confused with the new SDL_DisplayId, this is more like the display_index
-  if (m_display_settings.display_id >= m_current_display_modes.size()) {
+  if (m_display_settings.display_id < 0 ||
+      static_cast<size_t>(m_display_settings.display_id) >= m_current_display_modes.size()) {
     lg::warn("[DISPLAY] Saved display ID is no longer valid, resetting to display 0");
     m_display_settings.display_id = 0;
     m_display_settings.window_xpos = 50;
@@ -154,7 +183,7 @@ void DisplayManager::process_ee_events() {
 }
 
 std::string DisplayManager::get_connected_display_name(int id) {
-  if (m_current_display_modes.size() > id) {
+  if (id >= 0 && static_cast<size_t>(id) < m_current_display_modes.size()) {
     return m_current_display_modes.at(id).display_name;
   }
   return "";
@@ -162,7 +191,7 @@ std::string DisplayManager::get_connected_display_name(int id) {
 
 int DisplayManager::get_active_display_refresh_rate() {
   const auto display_index = get_active_display_index();
-  if (m_current_display_modes.size() > display_index) {
+  if (display_index >= 0 && static_cast<size_t>(display_index) < m_current_display_modes.size()) {
     return round(m_current_display_modes.at(display_index).refresh_rate);
   }
   return 0;
@@ -170,7 +199,7 @@ int DisplayManager::get_active_display_refresh_rate() {
 
 int DisplayManager::get_screen_width() {
   const auto display_index = get_active_display_index();
-  if (m_current_display_modes.size() > display_index) {
+  if (display_index >= 0 && static_cast<size_t>(display_index) < m_current_display_modes.size()) {
     return m_current_display_modes.at(display_index).screen_width;
   }
   return 640;
@@ -178,7 +207,7 @@ int DisplayManager::get_screen_width() {
 
 int DisplayManager::get_screen_height() {
   const auto display_index = get_active_display_index();
-  if (m_current_display_modes.size() > display_index) {
+  if (display_index >= 0 && static_cast<size_t>(display_index) < m_current_display_modes.size()) {
     return m_current_display_modes.at(display_index).screen_height;
   }
   return 480;
@@ -192,9 +221,9 @@ int DisplayManager::get_num_resolutions(bool for_window_size) {
 }
 
 Resolution DisplayManager::get_resolution(int id, bool for_window_size) {
-  if (for_window_size && id < (int)m_available_window_sizes.size()) {
+  if (id >= 0 && for_window_size && static_cast<size_t>(id) < m_available_window_sizes.size()) {
     return m_available_window_sizes.at(id);
-  } else if (id < (int)m_available_resolutions.size()) {
+  } else if (id >= 0 && static_cast<size_t>(id) < m_available_resolutions.size()) {
     return m_available_resolutions.at(id);
   }
   return {0, 0, 0.0};
@@ -227,43 +256,60 @@ void DisplayManager::enqueue_set_window_display_mode(
   ee_event_queue.push({EEDisplayEventType::SET_DISPLAY_MODE, mode, window_width, window_height});
 }
 
-void DisplayManager::set_display_mode(game_settings::DisplaySettings::DisplayMode mode,
-                                      const int window_width,
-                                      const int window_height) {
+bool DisplayManager::set_display_mode(game_settings::DisplaySettings::DisplayMode mode,
+                                       const int window_width,
+                                       const int window_height) {
   lg::info("[DISPLAY] Setting to display mode: {}, with window_size: {},{}", static_cast<int>(mode),
            window_width, window_height);
   // https://wiki.libsdl.org/SDL3/SDL_SetWindowFullscreen
-  int result = 0;
+  bool success = false;
   switch (mode) {
     case game_settings::DisplaySettings::DisplayMode::Windowed:
       if (SDL_SetWindowFullscreen(m_window, false)) {
         lg::info("[DISPLAY] windowed mode - resizing window to {}x{}", window_width, window_height);
-        if (!SDL_SetWindowSize(m_window, window_width, window_height)) {
+        if (window_width > 0 && window_height > 0 &&
+            !SDL_SetWindowSize(m_window, window_width, window_height)) {
           sdl_util::log_error("unable to change window size");
+          break;
         }
         // if we are changing from fullscreen/borderless back to windowed - make sure it's not
         // annoyingly at the edge of the screen
         if (m_display_settings.display_mode !=
                 game_settings::DisplaySettings::DisplayMode::Windowed &&
             !SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED)) {
-          sdl_util::log_error(fmt::format("unable to move window to center"));
-          break;
+            sdl_util::log_error(fmt::format("unable to move window to center"));
+            break;
         }
+        success = !window_is_fullscreen(m_window);
       } else {
         sdl_util::log_error("unable to change window to windowed mode");
       }
       break;
     case game_settings::DisplaySettings::DisplayMode::Fullscreen: {
-      if (m_current_display_modes.size() <= get_active_display_index()) {
+      const auto target_display_index = m_display_settings.display_id;
+      if (target_display_index < 0 ||
+          static_cast<size_t>(target_display_index) >= m_current_display_modes.size()) {
         lg::error("Display index out of range, cannot switch to fullscreen");
         break;
       }
-      const auto current_display_mode = SDL_GetDesktopDisplayMode(
-          m_current_display_modes.at(get_active_display_index()).sdl_display_id);
+      const auto target_display_id = m_current_display_modes.at(target_display_index).sdl_display_id;
+      const auto current_display_mode = SDL_GetDesktopDisplayMode(target_display_id);
       if (!current_display_mode) {
         sdl_util::log_error(fmt::format("unable to get current display mode for display index {}",
-                                        get_active_display_index()));
+                                        target_display_index));
         break;
+      }
+
+      // A native macOS fullscreen Space is created for the display containing the
+      // window. Move it first when the user selected a different monitor.
+      if (SDL_GetDisplayForWindow(m_window) != target_display_id) {
+        SDL_Rect target_bounds;
+        if (!SDL_GetDisplayBounds(target_display_id, &target_bounds) ||
+            !SDL_SetWindowPosition(m_window, target_bounds.x, target_bounds.y) ||
+            !SDL_SyncWindow(m_window)) {
+          sdl_util::log_error("unable to move window to the selected display before fullscreen");
+          break;
+        }
       }
       if (!SDL_SetWindowFullscreenMode(m_window, current_display_mode)) {
         sdl_util::log_error(fmt::format("unable to set fullscreen display mode"));
@@ -273,9 +319,15 @@ void DisplayManager::set_display_mode(game_settings::DisplaySettings::DisplayMod
         sdl_util::log_error(fmt::format("unable to enable fullscreen mode on window"));
         break;
       }
+      success = window_is_fullscreen(m_window);
       break;
     }
     case game_settings::DisplaySettings::DisplayMode::Borderless: {
+      if (m_display_settings.display_id < 0 ||
+          static_cast<size_t>(m_display_settings.display_id) >= m_current_display_modes.size()) {
+        lg::error("Display index out of range, cannot switch to borderless fullscreen");
+        break;
+      }
       // Move the window to the correct display first
       SDL_Rect rect;
       const auto sdl_display_id =
@@ -303,17 +355,23 @@ void DisplayManager::set_display_mode(game_settings::DisplaySettings::DisplayMod
         sdl_util::log_error(fmt::format("unable to enable borderless fullscreen mode on window"));
         break;
       }
+      success = window_is_fullscreen(m_window);
       break;
     }
+    default:
+      lg::error("Unknown display mode {}", fmt::underlying(mode));
+      break;
   }
-  if (result != 0) {
+  if (!success) {
     sdl_util::log_error(
         fmt::format("unable to change window display mode to {}", fmt::underlying(mode)));
-  } else {
-    // Set the mode, now that we've been successful
-    m_display_settings.display_mode = mode;
-    m_display_settings.save_settings();
+    return false;
   }
+
+  // Commit the requested mode only after SDL reports the expected state.
+  m_display_settings.display_mode = mode;
+  m_display_settings.save_settings();
+  return true;
 }
 
 void DisplayManager::toggle_display_mode() {
@@ -361,13 +419,20 @@ void DisplayManager::enqueue_set_display_id(int display_id) {
 
 void DisplayManager::set_display_id(int display_id) {
   lg::info("[DISPLAY] Setting display id to: {}", display_id);
-  if (display_id >= (int)m_current_display_modes.size()) {
+  if (m_current_display_modes.empty()) {
+    lg::error("[DISPLAY] Cannot select a display when none are available");
+    return;
+  }
+  if (display_id < 0 || static_cast<size_t>(display_id) >= m_current_display_modes.size()) {
     display_id = 0;
   }
+  const auto previous_display_id = m_display_settings.display_id;
+  const auto current_mode = m_display_settings.display_mode;
   m_display_settings.display_id = display_id;
-  if (get_display_mode() != game_settings::DisplaySettings::DisplayMode::Windowed) {
-    set_display_mode((game_settings::DisplaySettings::DisplayMode)m_display_settings.display_mode,
-                     0, 0);
+  if (current_mode != game_settings::DisplaySettings::DisplayMode::Windowed &&
+      !set_display_mode(current_mode, 0, 0)) {
+    m_display_settings.display_id = previous_display_id;
+    return;
   }
   m_display_settings.save_settings();
 }
@@ -379,25 +444,19 @@ void DisplayManager::update_curr_display_info() {
     sdl_util::log_error("could not retrieve current window's sdl display id");
     return;
   }
-  int num_displays = 0;
-  const auto display_ids = SDL_GetDisplays(&num_displays);
-  if (num_displays < 0 || !display_ids) {
-    sdl_util::log_error("could not retrieve sdl display ids");
-    return;
-  }
   int display_index = -1;
-  for (int i = 0; i < num_displays; i++) {
-    if (current_sdl_display_id == display_ids[i]) {
+  for (size_t i = 0; i < m_current_display_modes.size(); i++) {
+    if (current_sdl_display_id == m_current_display_modes.at(i).sdl_display_id) {
       display_index = i;
       break;
     }
   }
   if (display_index == -1) {
-    sdl_util::log_error("could not retrieve current window's display index");
-    return;
+    lg::warn("[DISPLAY] Current window display is not in the cached display list");
+  } else {
+    m_display_settings.display_id = display_index;
+    lg::info("[DISPLAY] current display index is {}", m_display_settings.display_id);
   }
-  m_display_settings.display_id = display_index;
-  lg::info("[DISPLAY] current display index is {}", m_display_settings.display_id);
   SDL_GetWindowSizeInPixels(m_window, &m_window_width, &m_window_height);
   SDL_GetWindowPosition(m_window, &m_window_xpos, &m_window_ypos);
   // Update the scale of the display as well
@@ -410,7 +469,7 @@ void DisplayManager::update_curr_display_info() {
 void DisplayManager::update_video_modes() {
   lg::info("[DISPLAY] Enumerating video modes");
   int num_displays = 0;
-  const auto display_ids = SDL_GetDisplays(&num_displays);
+  std::unique_ptr<SDL_DisplayID, SDLFreeDeleter> display_ids{SDL_GetDisplays(&num_displays)};
   if (num_displays < 0 || !display_ids) {
     sdl_util::log_error("could not retrieve display ids");
     return;
@@ -418,7 +477,7 @@ void DisplayManager::update_video_modes() {
 
   m_current_display_modes.clear();
   for (int i = 0; i < num_displays; i++) {
-    SDL_DisplayID display_id = display_ids[i];
+    SDL_DisplayID display_id = display_ids.get()[i];
     const auto curr_mode = SDL_GetCurrentDisplayMode(display_id);
     if (!curr_mode) {
       sdl_util::log_error(
@@ -461,6 +520,25 @@ void DisplayManager::update_video_modes() {
         new_mode.display_name, new_mode.screen_width, new_mode.screen_height, new_mode.refresh_rate,
         new_mode.sdl_pixel_format, static_cast<int>(new_mode.orientation));
   }
+  if (m_current_display_modes.empty()) {
+    lg::error("[DISPLAY] No usable display modes found");
+    m_display_settings.display_id = 0;
+  } else {
+    const auto window_display_id = SDL_GetDisplayForWindow(m_window);
+    const auto current = std::find_if(
+        m_current_display_modes.begin(), m_current_display_modes.end(),
+        [window_display_id](const DisplayMode& display) {
+          return display.sdl_display_id == window_display_id;
+        });
+    if (current != m_current_display_modes.end()) {
+      m_display_settings.display_id =
+          static_cast<int>(std::distance(m_current_display_modes.begin(), current));
+    } else if (m_display_settings.display_id < 0 ||
+               static_cast<size_t>(m_display_settings.display_id) >=
+                   m_current_display_modes.size()) {
+      m_display_settings.display_id = 0;
+    }
+  }
   update_resolutions();
 }
 
@@ -468,14 +546,18 @@ void DisplayManager::update_resolutions() {
   lg::info("[DISPLAY] Enumerating resolutions");
   // Enumerate display's display modes to get the resolutions
   const auto active_display_index = get_active_display_index();
-  if (active_display_index >= m_current_display_modes.size()) {
+  m_available_resolutions.clear();
+  m_available_window_sizes.clear();
+  if (active_display_index < 0 ||
+      static_cast<size_t>(active_display_index) >= m_current_display_modes.size()) {
     lg::error("Unable to enumerate resolutions, cant retrieve display mode");
+    return;
   }
   const auto active_display_mode = m_current_display_modes.at(active_display_index);
   const auto active_refresh_rate = active_display_mode.refresh_rate;
   int num_display_modes = 0;
-  SDL_DisplayMode** modes =
-      SDL_GetFullscreenDisplayModes(active_display_mode.sdl_display_id, &num_display_modes);
+  std::unique_ptr<SDL_DisplayMode*, SDLFreeDeleter> modes{
+      SDL_GetFullscreenDisplayModes(active_display_mode.sdl_display_id, &num_display_modes)};
   if (!modes) {
     sdl_util::log_error(
         fmt::format("Unable to retrieve display modes for display id: {}", active_display_index));
@@ -483,7 +565,7 @@ void DisplayManager::update_resolutions() {
   }
 
   for (int i = 0; i < num_display_modes; i++) {
-    auto display_mode = modes[i];
+    auto display_mode = modes.get()[i];
     if (!display_mode) {
       sdl_util::log_error(fmt::format("unable to get display mode for display {}, index {}",
                                       active_display_mode.sdl_display_id, i));

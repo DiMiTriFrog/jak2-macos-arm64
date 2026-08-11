@@ -70,6 +70,9 @@ void to_json(json& j, const DisplaySettings& obj) {
   json_serialize(window_xpos);
   json_serialize(window_ypos);
   json_serialize(display_mode);
+#if defined(__APPLE__) && defined(__aarch64__)
+  json_serialize(arm64_native_fullscreen_migration_done);
+#endif
 }
 void from_json(const json& j, DisplaySettings& obj) {
   json_deserialize_if_exists(version);
@@ -80,31 +83,45 @@ void from_json(const json& j, DisplaySettings& obj) {
     int mode = j.at("display_mode");
     obj.display_mode = static_cast<DisplaySettings::DisplayMode>(mode);
   }
+#if defined(__APPLE__) && defined(__aarch64__)
+  json_deserialize_if_exists(arm64_native_fullscreen_migration_done);
+#endif
 }
 
 DisplaySettings::DisplaySettings() {}
 
 void DisplaySettings::load_settings() {
+  bool settings_file_loaded = false;
   try {
     std::string file_path =
         (file_util::get_user_settings_dir(g_game_version) / "display-settings.json").string();
     if (!file_util::file_exists(file_path)) {
-      return;
+      // Defaults are already native fullscreen on Apple ARM64. Mark the
+      // migration complete in memory so a user-selected Borderless mode made
+      // before the first shutdown is not migrated on the next launch.
+#if defined(__APPLE__) && defined(__aarch64__)
+      arm64_native_fullscreen_migration_done = true;
+#endif
+    } else {
+      lg::info("Loading display settings at {}", file_path);
+      auto raw = file_util::read_text_file(file_path);
+      from_json(parse_commented_json(raw, "display-settings.json"), *this);
+      settings_file_loaded = true;
     }
-    lg::info("Loading display settings at {}", file_path);
-    auto raw = file_util::read_text_file(file_path);
-    from_json(parse_commented_json(raw, "display-settings.json"), *this);
   } catch (std::exception& e) {
     // do nothing
     lg::error("Error encountered when attempting to load display settings {}", e.what());
   }
 #if defined(__APPLE__) && defined(__aarch64__)
-  // Older ARM64 development runs saved Borderless. Upgrade that persisted
-  // preference so a normal launch enters the macOS full-screen Space and can
-  // activate Apple Game Mode. x86-64 and explicit Fullscreen are unchanged.
-  if (display_mode == DisplaySettings::DisplayMode::Borderless) {
-    lg::info("[DISPLAY] ARM64 macOS: using native fullscreen for Apple Game Mode");
-    display_mode = DisplaySettings::DisplayMode::Fullscreen;
+  // Older ARM64 development runs saved Borderless. Migrate that value once;
+  // after the marker is written, an explicit Borderless choice is respected.
+  if (settings_file_loaded && !arm64_native_fullscreen_migration_done) {
+    if (display_mode == DisplaySettings::DisplayMode::Borderless) {
+      lg::info("[DISPLAY] ARM64 macOS: migrating old Borderless preference to native fullscreen");
+      display_mode = DisplaySettings::DisplayMode::Fullscreen;
+    }
+    arm64_native_fullscreen_migration_done = true;
+    save_settings();
   }
 #endif
 }

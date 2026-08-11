@@ -64,6 +64,8 @@ struct DisplaySettings {
   // Apple Game Mode requires the native macOS full-screen Space. Borderless
   // fullscreen fills the display but does not enter that system-managed mode.
   DisplayMode display_mode = DisplayMode::Fullscreen;
+  // One-time migration marker for settings written by earlier ARM64 builds.
+  bool arm64_native_fullscreen_migration_done = false;
 #else
   DisplayMode display_mode = DisplayMode::Borderless;
 #endif

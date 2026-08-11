@@ -137,7 +137,7 @@ class DisplayManager {
   void update_resolutions();
 
   void set_window_size(int width, int height);
-  void set_display_mode(game_settings::DisplaySettings::DisplayMode mode,
+  bool set_display_mode(game_settings::DisplaySettings::DisplayMode mode,
                         const int window_width,
                         const int window_height);
   void set_display_id(int display_id);
