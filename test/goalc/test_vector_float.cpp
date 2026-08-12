@@ -15,21 +15,21 @@
 class WithMinimalGameTests : public ::testing::Test {
  public:
   static void SetUpTestSuite() {
-    shared_compiler = std::make_unique<SharedCompiler>(GameVersion::Jak1);
+    shared_compiler = std::make_unique<SharedCompiler>(GameVersion::Jak2);
     try {
       shared_compiler->compiler.run_front_end_on_string("(build-kernel)");
     } catch (std::exception& e) {
       fprintf(stderr, "caught exception %s\n", e.what());
       EXPECT_TRUE(false);
     }
-    shared_compiler->runtime_thread = std::thread(GoalTest::runtime_with_kernel_jak1);
+    shared_compiler->runtime_thread = std::thread(GoalTest::runtime_with_kernel_jak2);
     shared_compiler->runner.c = &shared_compiler->compiler;
 
     shared_compiler->compiler.run_test_from_string(
         "(dgo-load \"kernel\" global (link-flag output-load-msg output-load-true-msg execute-login "
         "print-login) #x200000)");
 
-    const auto minimal_files = {"goal_src/jak1/engine/math/vector-h.gc"};
+    const auto minimal_files = {"goal_src/jak2/engine/math/vector-h.gc"};
     for (auto& file : minimal_files) {
       shared_compiler->compiler.run_test_from_string(fmt::format("(ml \"{}\")", file));
     }

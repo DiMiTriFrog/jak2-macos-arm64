@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: driver-ratchet.gc
-;; name in dgo: driver-ratchet
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

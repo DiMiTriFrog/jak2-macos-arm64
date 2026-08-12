@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: speech-jak.gc
-;; name in dgo: speech-jak
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

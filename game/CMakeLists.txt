@@ -1,5 +1,5 @@
 # Set a more convenient ARM flag
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64" OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
     set(ARM64_ARCH TRUE)
     message(STATUS "ARM64 architecture detected")
 else()
@@ -22,17 +22,12 @@ else()
 endif()
 
 set(RUNTIME_SOURCE
-        external/discord_jak1.cpp
         external/discord_jak2.cpp
-        external/discord_jak3.cpp
-        external/discord_jakx.cpp
         external/discord.cpp
         graphics/display.cpp
         graphics/gfx_test.cpp
         graphics/gfx.cpp
         graphics/jak2_texture_remap.cpp
-        graphics/jak3_texture_remap.cpp
-        graphics/jakx_texture_remap.cpp
         graphics/screenshot.cpp
         graphics/opengl_renderer/background/background_common.cpp
         graphics/opengl_renderer/background/Hfrag.cpp
@@ -89,9 +84,7 @@ set(RUNTIME_SOURCE
         graphics/opengl_renderer/Warp.cpp
         graphics/pipelines/opengl.cpp
         graphics/sceGraphicsInterface.cpp
-        graphics/texture/jak1_tpage_dir.cpp
         graphics/texture/jak2_tpage_dir.cpp
-        graphics/texture/jak3_tpage_dir.cpp
         graphics/texture/TextureConverter.cpp
         graphics/texture/TexturePool.cpp
         ${OG_ASM_FUNCS_FILE}
@@ -108,15 +101,6 @@ set(RUNTIME_SOURCE
         kernel/common/kscheme.cpp
         kernel/common/ksocket.cpp
         kernel/common/ksound.cpp
-        kernel/jak1/fileio.cpp
-        kernel/jak1/kboot.cpp
-        kernel/jak1/kdgo.cpp
-        kernel/jak1/klink.cpp
-        kernel/jak1/klisten.cpp
-        kernel/jak1/kmachine.cpp
-        kernel/jak1/kprint.cpp
-        kernel/jak1/kscheme.cpp
-        kernel/jak1/ksound.cpp
         kernel/jak2/fileio.cpp
         kernel/jak2/kboot.cpp
         kernel/jak2/kdgo.cpp
@@ -128,59 +112,6 @@ set(RUNTIME_SOURCE
         kernel/jak2/kprint.cpp
         kernel/jak2/kscheme.cpp
         kernel/jak2/ksound.cpp
-        kernel/jak3/fileio.cpp
-        kernel/jak3/kboot.cpp
-        kernel/jak3/kdgo.cpp
-        kernel/jak3/kdsnetm.cpp
-        kernel/jak3/klink.cpp
-        kernel/jak3/klisten.cpp
-        kernel/jak3/kmachine.cpp
-        kernel/jak3/kmachine_extras.cpp
-        kernel/jak3/kmalloc.cpp
-        kernel/jak3/kmemcard.cpp
-        kernel/jak3/kprint.cpp
-        kernel/jak3/kscheme.cpp
-        kernel/jak3/ksocket.cpp
-        kernel/jak3/ksound.cpp
-        kernel/jakx/fileio.cpp
-        kernel/jakx/kboot.cpp
-        kernel/jakx/kdgo.cpp
-        kernel/jakx/kdsnetm.cpp
-        kernel/jakx/klink.cpp
-        kernel/jakx/klisten.cpp
-        kernel/jakx/kmachine.cpp
-        kernel/jakx/kmachine_extras.cpp
-        kernel/jakx/kmalloc.cpp
-        kernel/jakx/kmemcard.cpp
-        kernel/jakx/kprint.cpp
-        kernel/jakx/kscheme.cpp
-        kernel/jakx/ksocket.cpp
-        kernel/jakx/ksound.cpp
-        mips2c/jak1_functions/bones.cpp
-        mips2c/jak1_functions/collide_cache.cpp
-        mips2c/jak1_functions/collide_edge_grab.cpp
-        mips2c/jak1_functions/collide_func.cpp
-        mips2c/jak1_functions/collide_mesh.cpp
-        mips2c/jak1_functions/collide_probe.cpp
-        mips2c/jak1_functions/draw_string.cpp
-        mips2c/jak1_functions/generic_effect.cpp
-        mips2c/jak1_functions/generic_effect2.cpp
-        mips2c/jak1_functions/generic_merc.cpp
-        mips2c/jak1_functions/generic_tie.cpp
-        mips2c/jak1_functions/joint.cpp
-        mips2c/jak1_functions/merc_blend_shape.cpp
-        mips2c/jak1_functions/ocean_vu0.cpp
-        mips2c/jak1_functions/ocean.cpp
-        mips2c/jak1_functions/ripple.cpp
-        mips2c/jak1_functions/shadow.cpp
-        mips2c/jak1_functions/sky_tng.cpp
-        mips2c/jak1_functions/sparticle_launcher.cpp
-        mips2c/jak1_functions/sparticle.cpp
-        mips2c/jak1_functions/test_func.cpp
-        mips2c/jak1_functions/texture.cpp
-        mips2c/jak1_functions/tfrag.cpp
-        mips2c/jak1_functions/tie_methods.cpp
-        mips2c/jak1_functions/time_of_day.cpp
         mips2c/jak2_functions/bones.cpp
         mips2c/jak2_functions/collide_cache.cpp
         mips2c/jak2_functions/collide_edge_grab.cpp
@@ -208,33 +139,6 @@ set(RUNTIME_SOURCE
         mips2c/jak2_functions/squid.cpp
         mips2c/jak2_functions/texture.cpp
         mips2c/jak2_functions/vortex.cpp
-        mips2c/jak3_functions/collide_func.cpp
-        mips2c/jak3_functions/debug.cpp
-        mips2c/jak3_functions/font.cpp
-        mips2c/jak3_functions/foreground.cpp
-        mips2c/jak3_functions/generic_effect.cpp
-        mips2c/jak3_functions/joint.cpp
-        mips2c/jak3_functions/lights.cpp
-        mips2c/jak3_functions/sky.cpp
-        mips2c/jak3_functions/texture.cpp
-        mips2c/jak3_functions/particle_curves.cpp
-        mips2c/jak3_functions/cloth.cpp
-        mips2c/jak3_functions/collide_cache.cpp
-        mips2c/jak3_functions/collide_hash.cpp
-        mips2c/jak3_functions/collide_edge_grab.cpp
-        mips2c/jak3_functions/collide_mesh.cpp
-        mips2c/jak3_functions/spatial_hash.cpp
-        mips2c/jak3_functions/sparticle.cpp
-        mips2c/jak3_functions/sparticle_launcher.cpp
-        mips2c/jak3_functions/nav_control.cpp
-        mips2c/jak3_functions/nav_engine.cpp
-        mips2c/jak3_functions/merc_blend_shape.cpp
-        mips2c/jak3_functions/wvehicle_part.cpp
-        mips2c/jak3_functions/ripple.cpp
-        mips2c/jak3_functions/shadow.cpp
-        mips2c/jak3_functions/ocean.cpp
-        mips2c/jak3_functions/ocean_vu0.cpp
-        mips2c/jak3_functions/generic_merc.cpp
         mips2c/mips2c_table.cpp
         overlord/common/dma.cpp
         overlord/common/fake_iso.cpp
@@ -247,17 +151,6 @@ set(RUNTIME_SOURCE
         overlord/common/soundcommon.cpp
         overlord/common/srpc.cpp
         overlord/common/ssound.cpp
-        overlord/jak1/dma.cpp
-        overlord/jak1/fake_iso.cpp
-        overlord/jak1/iso_api.cpp
-        overlord/jak1/iso_queue.cpp
-        overlord/jak1/iso.cpp
-        overlord/jak1/isocommon.cpp
-        overlord/jak1/overlord.cpp
-        overlord/jak1/ramdisk.cpp
-        overlord/jak1/srpc.cpp
-        overlord/jak1/ssound.cpp
-        overlord/jak1/stream.cpp
         overlord/jak2/dma.cpp
         overlord/jak2/iso_api.cpp
         overlord/jak2/iso_cd.cpp
@@ -267,6 +160,7 @@ set(RUNTIME_SOURCE
         overlord/jak2/overlord.cpp
         overlord/jak2/pages.cpp
         overlord/jak2/989_plugins/plugin_strv.cpp
+        overlord/jak2/ramdisk.cpp
         overlord/jak2/spustreams.cpp
         overlord/jak2/srpc.cpp
         overlord/jak2/ssound.cpp
@@ -274,53 +168,6 @@ set(RUNTIME_SOURCE
         overlord/jak2/streamlfo.cpp
         overlord/jak2/streamlist.cpp
         overlord/jak2/vag.cpp
-        overlord/jak3/overlord.cpp
-        overlord/jak3/pagemanager.cpp
-        overlord/jak3/iso_cd.cpp
-        overlord/jak3/dma.cpp
-        overlord/jak3/iso.cpp
-        overlord/jak3/iso_queue.cpp
-        overlord/jak3/srpc.cpp
-        overlord/jak3/vag.cpp
-        overlord/jak3/ssound.cpp
-        overlord/jak3/iso_api.cpp
-        overlord/jak3/spustreams.cpp
-        overlord/jak3/list.cpp
-        overlord/jak3/vblank_handler.cpp
-        overlord/jak3/dvd_driver.cpp
-        overlord/jak3/basefile.cpp
-        overlord/jak3/basefilesystem.cpp
-        overlord/jak3/ramdisk.cpp
-        overlord/jak3/isocommon.cpp
-        overlord/jak3/init.cpp
-        overlord/jak3/stream.cpp
-        overlord/jak3/sbank.cpp
-        overlord/jak3/soundcommon.cpp
-        overlord/jak3/streamlist.cpp
-        overlord/jak3/989_plugins/plugin_strv.cpp
-        overlord/jakx/overlord.cpp
-        overlord/jakx/pagemanager.cpp
-        overlord/jakx/iso_cd.cpp
-        overlord/jakx/dma.cpp
-        overlord/jakx/iso.cpp
-        overlord/jakx/iso_queue.cpp
-        overlord/jakx/srpc.cpp
-        overlord/jakx/vag.cpp
-        overlord/jakx/ssound.cpp
-        overlord/jakx/iso_api.cpp
-        overlord/jakx/spustreams.cpp
-        overlord/jakx/list.cpp
-        overlord/jakx/vblank_handler.cpp
-        overlord/jakx/dvd_driver.cpp
-        overlord/jakx/basefile.cpp
-        overlord/jakx/basefilesystem.cpp
-        overlord/jakx/ramdisk.cpp
-        overlord/jakx/isocommon.cpp
-        overlord/jakx/init.cpp
-        overlord/jakx/stream.cpp
-        overlord/jakx/sbank.cpp
-        overlord/jakx/soundcommon.cpp
-        overlord/jakx/streamlist.cpp
         runtime.cpp
         sce/deci2.cpp
         sce/iop.cpp
@@ -352,12 +199,41 @@ set(RUNTIME_SOURCE
         tools/subtitle_editor/subtitle_editor.cpp
         )
 
+if(OPENGOAL_GRAPHICS_BACKEND STREQUAL "METAL")
+    # Metal has its own display/pipeline implementation. Keep the OpenGL
+    # source list available for the default build, but do not compile it into
+    # a Metal runtime.
+    list(FILTER RUNTIME_SOURCE EXCLUDE REGEX "^graphics/opengl_renderer/")
+    list(FILTER RUNTIME_SOURCE EXCLUDE REGEX "^graphics/pipelines/opengl\\.cpp$")
+    list(FILTER RUNTIME_SOURCE EXCLUDE REGEX "^graphics/texture/")
+    list(FILTER RUNTIME_SOURCE EXCLUDE REGEX "^graphics/gfx_test\\.cpp$")
+    list(APPEND RUNTIME_SOURCE
+        graphics/gfx_test_metal.cpp
+        graphics/pipelines/metal.mm
+        graphics/metal/MetalContext.mm
+        graphics/metal/MetalRuntimeStubs.cpp)
+else()
+    list(APPEND RUNTIME_SOURCE "../third-party/glad/src/glad.c")
+endif()
+
+if(OG_TARGET_IOS)
+    list(FILTER RUNTIME_SOURCE EXCLUDE REGEX "^external/discord")
+    list(FILTER RUNTIME_SOURCE EXCLUDE REGEX "^tools/")
+    list(APPEND RUNTIME_SOURCE external/discord_ios_stub.cpp)
+endif()
+
 add_subdirectory(sound)
 
 # we build the runtime as a static library.
-add_library(runtime STATIC ${RUNTIME_SOURCE} "../third-party/glad/src/glad.c")
+add_library(runtime STATIC ${RUNTIME_SOURCE})
 
-target_link_libraries(runtime common fmt SDL3::SDL3 imgui discord-rpc sound stb_image libco libcurl)
+target_link_libraries(runtime common fmt SDL3::SDL3 imgui sound stb_image libco libcurl)
+if(NOT OG_TARGET_IOS)
+    target_link_libraries(runtime discord-rpc)
+endif()
+if(APPLE AND OPENGOAL_GRAPHICS_BACKEND STREQUAL "METAL")
+    target_link_libraries(runtime "-framework Foundation" "-framework Metal" "-framework QuartzCore")
+endif()
 if(WIN32)
     target_link_libraries(runtime mman)
 else()
@@ -366,15 +242,50 @@ endif()
 
 add_executable(gk main.cpp)
 target_link_libraries(gk runtime)
-if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+if(OPENGOAL_GRAPHICS_BACKEND STREQUAL "METAL")
+    if(CMAKE_OSX_SYSROOT MATCHES "iphonesimulator")
+        set(OG_METAL_SDK iphonesimulator)
+    elseif(CMAKE_SYSTEM_NAME MATCHES "iOS|tvOS|watchOS")
+        set(OG_METAL_SDK iphoneos)
+    else()
+        set(OG_METAL_SDK macosx)
+    endif()
+    set(OG_METAL_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/graphics/metal/shaders")
+    set(OG_METAL_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/metal")
+    set(OG_METAL_AIR "${OG_METAL_OUTPUT_DIR}/synthetic_basic.air")
+    set(OG_METAL_LIBRARY "${OG_METAL_OUTPUT_DIR}/OpenGOAL.metallib")
+    add_custom_command(
+        OUTPUT "${OG_METAL_AIR}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${OG_METAL_OUTPUT_DIR}"
+        COMMAND xcrun -sdk "${OG_METAL_SDK}" metal -Werror -c
+                "${OG_METAL_SHADER_DIR}/synthetic_basic.metal"
+                -o "${OG_METAL_AIR}"
+        DEPENDS "${OG_METAL_SHADER_DIR}/synthetic_basic.metal"
+        VERBATIM)
+    add_custom_command(
+        OUTPUT "${OG_METAL_LIBRARY}"
+        COMMAND xcrun -sdk "${OG_METAL_SDK}" metallib "${OG_METAL_AIR}"
+                -o "${OG_METAL_LIBRARY}"
+        DEPENDS "${OG_METAL_AIR}"
+        VERBATIM)
+    add_custom_target(og-metal-shaders DEPENDS "${OG_METAL_LIBRARY}")
+    add_dependencies(gk og-metal-shaders)
+    set_source_files_properties("${OG_METAL_LIBRARY}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources/metal")
+    target_sources(gk PRIVATE "${OG_METAL_LIBRARY}")
+endif()
+if(APPLE AND (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64" OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64"))
     set_target_properties(gk PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist.in"
         MACOSX_RPATH TRUE
         BUILD_RPATH "@loader_path/../Frameworks"
         INSTALL_RPATH "@executable_path/../Frameworks"
-        XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/macos/jak-jit.entitlements"
     )
+    if(OG_EXECUTION_MODE_DYNAMIC)
+        set_target_properties(gk PROPERTIES
+            XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/macos/jak-jit.entitlements")
+    endif()
 endif()
 if(WIN32)
     set_target_properties(gk PROPERTIES VS_DPI_AWARE "PerMonitor")

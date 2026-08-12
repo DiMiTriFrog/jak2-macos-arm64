@@ -22,7 +22,12 @@
 #include "common/cross_os_debug/xdbg.h"
 #include "common/global_profiler/GlobalProfiler.h"
 #include "common/goal_constants.h"
+#include "common/platform/BuildConfig.h"
+#if OG_EXECUTION_MODE_AOT
+#include "common/data_memory.h"
+#else
 #include "common/jit_memory.h"
+#endif
 #include "common/log/log.h"
 #include "common/versions/versions.h"
 
@@ -38,43 +43,26 @@
 #include "game/kernel/common/kmemcard.h"
 #include "game/kernel/common/kprint.h"
 #include "game/kernel/common/kscheme.h"
-#include "game/kernel/jak1/kboot.h"
-#include "game/kernel/jak1/kdgo.h"
-#include "game/kernel/jak1/klisten.h"
-#include "game/kernel/jak1/kscheme.h"
 #include "game/kernel/jak2/kboot.h"
 #include "game/kernel/jak2/kdgo.h"
 #include "game/kernel/jak2/klisten.h"
 #include "game/kernel/jak2/kscheme.h"
-#include "game/kernel/jak3/kboot.h"
-#include "game/kernel/jak3/kdgo.h"
-#include "game/kernel/jak3/klisten.h"
-#include "game/kernel/jak3/kscheme.h"
-#include "game/kernel/jakx/kboot.h"
 #include "game/overlord/common/fake_iso.h"
 #include "game/overlord/common/iso.h"
 #include "game/overlord/common/sbank.h"
 #include "game/overlord/common/srpc.h"
 #include "game/overlord/common/ssound.h"
-#include "game/overlord/jak1/dma.h"
-#include "game/overlord/jak1/fake_iso.h"
-#include "game/overlord/jak1/iso.h"
-#include "game/overlord/jak1/iso_queue.h"
-#include "game/overlord/jak1/overlord.h"
-#include "game/overlord/jak1/ramdisk.h"
-#include "game/overlord/jak1/srpc.h"
-#include "game/overlord/jak1/stream.h"
 #include "game/overlord/jak2/dma.h"
 #include "game/overlord/jak2/iso_cd.h"
 #include "game/overlord/jak2/iso_queue.h"
 #include "game/overlord/jak2/overlord.h"
+#include "game/overlord/jak2/ramdisk.h"
 #include "game/overlord/jak2/spustreams.h"
 #include "game/overlord/jak2/srpc.h"
 #include "game/overlord/jak2/ssound.h"
 #include "game/overlord/jak2/stream.h"
 #include "game/overlord/jak2/streamlist.h"
 #include "game/overlord/jak2/vag.h"
-#include "game/overlord/jak3/overlord.h"
 #include "game/system/Deci2Server.h"
 #include "game/system/iop_thread.h"
 #include "sce/deci2.h"
@@ -85,10 +73,14 @@
 
 u8* g_ee_main_mem = nullptr;
 std::thread::id g_main_thread_id = std::thread::id();
-GameVersion g_game_version = GameVersion::Jak1;
+GameVersion g_game_version = GameVersion::Jak2;
 BackgroundWorker g_background_worker;
 int g_server_port = DECI2_PORT;
+#if OG_EXECUTION_MODE_AOT
+std::unique_ptr<data_memory::DataRegion> g_ee_main_region;
+#else
 std::unique_ptr<jit_memory::JitRegion> g_ee_main_region;
+#endif
 
 namespace {
 
@@ -146,13 +138,17 @@ void deci2_runner(SystemThreadInterface& iface) {
  */
 void ee_runner(SystemThreadInterface& iface) {
   prof().root_event();
-  // Allocate main RAM through the central JIT manager. On Apple ARM64 this is MAP_JIT and starts
-  // writable only; individual generated-code ranges transition to RX after their final patch.
+  // AOT uses a data-only mapping. Dynamic builds retain the existing JIT manager.
   try {
     void* hint = EE_MEM_LOW_MAP ? reinterpret_cast<void*>(0x10000000)
                                 : reinterpret_cast<void*>(EE_MAIN_MEM_MAP);
+#if OG_EXECUTION_MODE_AOT
+    g_ee_main_region = std::make_unique<data_memory::DataRegion>(
+        data_memory::DataRegion::allocate(EE_MAIN_MEM_SIZE, hint));
+#else
     g_ee_main_region = std::make_unique<jit_memory::JitRegion>(
         jit_memory::JitRegion::allocate(EE_MAIN_MEM_SIZE, hint));
+#endif
     g_ee_main_mem = static_cast<u8*>(g_ee_main_region->data());
   } catch (const std::system_error& error) {
     lg::error("Failed to initialize main memory: {}", error.what());
@@ -173,32 +169,28 @@ void ee_runner(SystemThreadInterface& iface) {
   // prevent access to the first 512 kB of memory.
   // On the PS2 this is the kernel and can't be accessed either.
   // this may not work well on systems with a page size > 1 MB.
+#if OG_EXECUTION_MODE_AOT
+  data_memory::make_no_access((void*)g_ee_main_mem, EE_MAIN_MEM_LOW_PROTECT);
+#else
   jit_memory::make_no_access((void*)g_ee_main_mem, EE_MAIN_MEM_LOW_PROTECT);
+#endif
   fileio_init_globals();
-  jak1::kboot_init_globals();
   jak2::kboot_init_globals();
-  jak3::kboot_init_globals();
 
   kboot_init_globals_common();
   kdgo_init_globals();
-  jak1::kdgo_init_globals();
   jak2::kdgo_init_globals();
-  jak3::kdgo_init_globals();
 
   kdsnetm_init_globals_common();
   klink_init_globals();
 
   kmachine_init_globals_common();
-  jak1::kscheme_init_globals();
   jak2::kscheme_init_globals();
-  jak3::kscheme_init_globals();
   kscheme_init_globals_common();
   kmalloc_init_globals_common();
 
   klisten_init_globals();
-  jak1::klisten_init_globals();
   jak2::klisten_init_globals();
-  jak3::klisten_init_globals();
 
   jak2::vag_init_globals();
 
@@ -211,17 +203,8 @@ void ee_runner(SystemThreadInterface& iface) {
   xdbg::allow_debugging();
 
   switch (g_game_version) {
-    case GameVersion::Jak1:
-      jak1::goal_main(g_argc, g_argv);
-      break;
     case GameVersion::Jak2:
       jak2::goal_main(g_argc, g_argv);
-      break;
-    case GameVersion::Jak3:
-      jak3::goal_main(g_argc, g_argv);
-      break;
-    case GameVersion::JakX:
-      jakx::goal_main(g_argc, g_argv);
       break;
     default:
       ASSERT_MSG(false, "Unsupported game version");
@@ -267,35 +250,26 @@ void iop_runner(SystemThreadInterface& iface, GameVersion version) {
     iop.signal_run_iop();
   });
 
-  if (version != GameVersion::Jak3 && version != GameVersion::JakX) {
-    jak1::dma_init_globals();
-    jak2::dma_init_globals();
+  jak2::dma_init_globals();
 
-    iso_init_globals();
-    jak1::iso_init_globals();
-    jak2::iso_init_globals();
+  iso_init_globals();
+  jak2::iso_init_globals();
 
-    fake_iso_init_globals();
-    jak1::fake_iso_init_globals();
-    jak2::iso_cd_init_globals();
+  fake_iso_init_globals();
+  jak2::iso_cd_init_globals();
 
-    jak1::iso_queue_init_globals();
-    jak2::iso_queue_init_globals();
+  jak2::iso_queue_init_globals();
 
-    jak2::spusstreams_init_globals();
-    jak1::ramdisk_init_globals();
-    sbank_init_globals();
+  jak2::spusstreams_init_globals();
+  jak2::ramdisk_init_globals();
+  sbank_init_globals();
 
-    // soundcommon
-    jak1::srpc_init_globals();
-    jak2::srpc_init_globals();
-    srpc_init_globals();
-    ssound_init_globals();
-    jak2::ssound_init_globals();
+  srpc_init_globals();
+  jak2::srpc_init_globals();
+  ssound_init_globals();
+  jak2::ssound_init_globals();
 
-    jak1::stream_init_globals();
-    jak2::stream_init_globals();
-  }
+  jak2::stream_init_globals();
 
   prof().end_event();
   iface.initialization_complete();
@@ -320,15 +294,8 @@ void iop_runner(SystemThreadInterface& iface, GameVersion version) {
   {
     auto p = scoped_prof("overlord-start");
     switch (version) {
-      case GameVersion::Jak1:
-        jak1::start_overlord_wrapper(iop.overlord_argc, iop.overlord_argv, &complete);
-        break;
       case GameVersion::Jak2:
         jak2::start_overlord_wrapper(iop.overlord_argc, iop.overlord_argv, &complete);
-        break;
-      case GameVersion::Jak3:
-      case GameVersion::JakX:
-        jak3::start_overlord_wrapper(&complete);
         break;
       default:
         ASSERT_NOT_REACHED();

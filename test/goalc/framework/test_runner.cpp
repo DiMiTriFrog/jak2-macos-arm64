@@ -106,14 +106,6 @@ void CompilerTestRunner::run_always_pass(const std::string& test_category,
   tests.push_back({{}, {}, test_file, true});
 }
 
-void runtime_no_kernel_jak1() {
-  constexpr int argc = 5;
-  const char* argv[argc] = {"", "-fakeiso", "-debug", "-nokernel", "-nosound"};
-  GameLaunchOptions game_options;
-  game_options.disable_display = true;
-  exec_runtime(game_options, argc, argv);
-}
-
 void runtime_no_kernel_jak2() {
   constexpr int argc = 5;
   const char* argv[argc] = {"", "-fakeiso", "-debug", "-nokernel", "-nosound"};
@@ -121,14 +113,6 @@ void runtime_no_kernel_jak2() {
   game_options.disable_display = true;
   game_options.game_version = GameVersion::Jak2;
   game_options.server_port = DECI2_PORT - 1 + static_cast<int>(game_options.game_version);
-  exec_runtime(game_options, argc, argv);
-}
-
-void runtime_with_kernel_jak1() {
-  constexpr int argc = 4;
-  const char* argv[argc] = {"", "-fakeiso", "-debug", "-nosound"};
-  GameLaunchOptions game_options;
-  game_options.disable_display = true;
   exec_runtime(game_options, argc, argv);
 }
 
@@ -142,21 +126,13 @@ void runtime_with_kernel_jak2() {
   exec_runtime(game_options, argc, argv);
 }
 
-void runtime_with_kernel_jak3() {
-  constexpr int argc = 4;
-  const char* argv[argc] = {"", "-fakeiso", "-debug", "-nosound"};
-  GameLaunchOptions game_options;
-  game_options.disable_display = true;
-  game_options.game_version = GameVersion::Jak3;
-  game_options.server_port = DECI2_PORT - 1 + static_cast<int>(game_options.game_version);
-  exec_runtime(game_options, argc, argv);
-}
-
 void runtime_with_kernel_no_debug_segment() {
   constexpr int argc = 4;
   const char* argv[argc] = {"", "-fakeiso", "-debug-mem", "-nosound"};
   GameLaunchOptions game_options;
   game_options.disable_display = true;
+  game_options.game_version = GameVersion::Jak2;
+  game_options.server_port = DECI2_PORT - 1 + static_cast<int>(game_options.game_version);
   exec_runtime(game_options, argc, argv);
 }
 

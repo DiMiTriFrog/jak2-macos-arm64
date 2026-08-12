@@ -3,6 +3,7 @@
 #include "common/goal_constants.h"
 #include "common/jit_memory.h"
 #include "common/log/log.h"
+#include "common/platform/BuildConfig.h"
 #include "common/symbols.h"
 
 #include "game/kernel/common/fileio.h"
@@ -565,12 +566,16 @@ void link_control::jak2_finish(bool jump_from_c_to_goal) {
         }
 #endif
         if (executable_size) {
+#if OG_EXECUTION_MODE_AOT
+          throw std::runtime_error("AOT object contains an executable code segment");
+#else
           jit_memory::make_executable(Ptr<u8>(code.offset).c(), executable_size);
+#endif
         }
       }
     }
   } else {
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
     // Legacy v2/v4 objects are relocated by GOAL after they are copied into
     // the heap. Keep their code range writable until that relocation method
     // has finished; x86 does not require this transition.

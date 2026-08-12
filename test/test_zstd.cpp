@@ -6,13 +6,16 @@
 #include "common/util/compress.h"
 
 #include "gtest/gtest.h"
-#include "test/all_jak1_symbols.h"
-
 #include "third-party/zstd/lib/zstd.h"
+
+namespace {
+const std::vector<std::string> kJak2SampleSymbols = {
+    "jak2", "level-h", "player", "metal-head", "haven-city", "opengoal"};
+}
 
 TEST(ZSTD, Basic) {
   std::string all;
-  for (auto& x : all_syms) {
+  for (auto& x : kJak2SampleSymbols) {
     all.append(x);
     all.append("\n");
   }
@@ -42,7 +45,7 @@ TEST(ZSTD, Basic) {
 
 TEST(ZSTD, CommonLibrary) {
   std::string all;
-  for (auto& x : all_syms) {
+  for (auto& x : kJak2SampleSymbols) {
     all.append(x);
     all.append("\n");
   }

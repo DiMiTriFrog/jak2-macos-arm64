@@ -1,7 +1,7 @@
 /*!
  * @file FontUtils.cpp
  *
- * Code for handling text and strings in Jak 1's "large font" format.
+ * Code for handling text and strings in the Jak 2 font format.
  *
  * MAKE SURE THIS FILE IS ENCODED IN UTF-8!!! The various strings here depend on it.
  * Always verify the encoding if string detection suddenly goes awry.
@@ -15,9 +15,7 @@
 
 #include "common/util/Assert.h"
 #include "common/util/FileUtil.h"
-#include "common/util/font/dbs/font_db_jak1.h"
 #include "common/util/font/dbs/font_db_jak2.h"
-#include "common/util/font/dbs/font_db_jak3.h"
 #include "common/util/font/font_utils_korean.h"
 #include "common/util/string_util.h"
 #include "common/versions/versions.h"
@@ -30,16 +28,10 @@ void from_json(const json& j, KoreanLookupEntry& obj) {
 }
 
 std::map<GameTextVersion, GameTextFontBank*> g_font_banks = {
-    {GameTextVersion::JAK1_V1, &g_font_bank_jak1_v1},
-    {GameTextVersion::JAK1_V2, &g_font_bank_jak1_v2},
-    {GameTextVersion::JAK2, &g_font_bank_jak2},
-    {GameTextVersion::JAK3, &g_font_bank_jak3}};
+    {GameTextVersion::JAK2, &g_font_bank_jak2}};
 
 const std::unordered_map<std::string, GameTextVersion> sTextVerEnumMap = {
-    {"jak1-v1", GameTextVersion::JAK1_V1},
-    {"jak1-v2", GameTextVersion::JAK1_V2},
-    {"jak2", GameTextVersion::JAK2},
-    {"jak3", GameTextVersion::JAK3}};
+    {"jak2", GameTextVersion::JAK2}};
 
 const std::string& get_text_version_name(GameTextVersion version) {
   for (auto& [name, ver] : sTextVerEnumMap) {
@@ -71,12 +63,7 @@ GameTextFontBank::GameTextFontBank(GameTextVersion version,
 }
 
 bool GameTextFontBank::is_language_id_korean(const int language_id) const {
-  if (m_version == GameTextVersion::JAK2 && language_id == 6) {
-    return true;
-  } else if (m_version == GameTextVersion::JAK3 && language_id == 7) {
-    return true;
-  }
-  return false;
+  return m_version == GameTextVersion::JAK2 && language_id == 6;
 }
 
 GameTextFontBank* get_font_bank(GameTextVersion version) {
@@ -84,17 +71,9 @@ GameTextFontBank* get_font_bank(GameTextVersion version) {
 }
 
 GameTextFontBank* get_font_bank_from_game_version(GameVersion version) {
-  if (version == GameVersion::Jak1) {
-    // Jak 1 has been patched to use V2
-    return get_font_bank(GameTextVersion::JAK1_V2);
-  } else if (version == GameVersion::Jak2) {
-    auto font_bank = get_font_bank(GameTextVersion::JAK2);
-    return font_bank;
-  } else if (version == GameVersion::Jak3) {
-    return get_font_bank(GameTextVersion::JAK3);
-  } else {
-    ASSERT_MSG(false, "Unsupported game for get_font_bank_from_game_version");
-  }
+  ASSERT_MSG(version == GameVersion::Jak2,
+             "This snapshot only provides the Jak 2 font bank");
+  return get_font_bank(GameTextVersion::JAK2);
 }
 
 GameTextFontBank* get_font_bank(const std::string& name) {
@@ -172,17 +151,9 @@ std::string GameTextFontBank::replace_to_utf8(const std::string& str) const {
 }
 
 bool GameTextFontBank::valid_char_range(const char& in) const {
-  if (m_version == GameTextVersion::JAK1_V1 || m_version == GameTextVersion::JAK1_V2) {
-    return ((in >= '0' && in <= '9') || (in >= 'A' && in <= 'Z') ||
-            m_passthrus->find(in) != m_passthrus->end()) &&
-           in != '\\';
-  } else if (m_version == GameTextVersion::JAK2 || m_version == GameTextVersion::JAK3 ||
-             m_version == GameTextVersion::JAKX) {
-    return ((in >= '0' && in <= '9') || (in >= 'A' && in <= 'Z') || (in >= 'a' && in <= 'z') ||
-            m_passthrus->find(in) != m_passthrus->end()) &&
-           in != '\\';
-  }
-  return false;
+  return ((in >= '0' && in <= '9') || (in >= 'A' && in <= 'Z') || (in >= 'a' && in <= 'z') ||
+          m_passthrus->find(in) != m_passthrus->end()) &&
+         in != '\\';
 }
 
 std::string GameTextFontBank::encode_game_to_utf8(const std::string& str) const {
@@ -238,8 +209,8 @@ std::string GameTextFontBank::convert_game_to_utf8(const char* in) const {
 }
 
 std::string GameTextFontBank::convert_utf8_to_game_korean(const std::string& str) {
-  ASSERT_MSG(m_version == GameTextVersion::JAK2 || m_version == GameTextVersion::JAK3,
-             "Korean is not supported for any game other than Jak 2 and Jak 3 right now");
+  ASSERT_MSG(m_version == GameTextVersion::JAK2,
+             "Korean is only supported for Jak 2 in this snapshot");
   if (!m_korean_db.has_value()) {
     const auto db_file_path =
         file_util::get_file_path({"game/assets/fonts/jak2_jak3_korean_db.json"});
@@ -283,8 +254,8 @@ std::string GameTextFontBank::convert_utf8_to_game_korean(const std::string& str
 }
 
 std::string GameTextFontBank::convert_korean_game_to_utf8(const char* in) const {
-  ASSERT_MSG(m_version == GameTextVersion::JAK2 || m_version == GameTextVersion::JAK3,
-             "Korean is not supported for any game other than Jak 2 and Jak 3 right now");
+  ASSERT_MSG(m_version == GameTextVersion::JAK2,
+             "Korean is only supported for Jak 2 in this snapshot");
   // Korean strings are fully bitstrings, in other words, it's just a bunch of bytes
   // Some info on the layout:
   // - Every korean syllable block starts with a `4`

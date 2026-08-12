@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: bsp.gc
-;; name in dgo: bsp
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

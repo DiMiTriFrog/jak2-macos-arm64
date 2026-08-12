@@ -5,6 +5,7 @@
 #include "common/global_profiler/GlobalProfiler.h"
 #include "common/jit_memory.h"
 #include "common/log/log.h"
+#include "common/platform/BuildConfig.h"
 #include "common/symbols.h"
 #include "common/util/FileUtil.h"
 #include "common/util/Timer.h"
@@ -127,9 +128,16 @@ void InitVideo() {
  * Flush caches.  Does all the memory, regardless of what you specify
  */
 void CacheFlush(void* mem, int size) {
+#if !OG_EXECUTION_MODE_AOT
   if (mem && size > 0) {
     jit_memory::make_executable(mem, static_cast<size_t>(size));
   }
+#else
+  // AOT code is already in the signed Mach-O. Imported data is never made
+  // executable, so the dynamic cache/protection operation has no AOT meaning.
+  (void)mem;
+  (void)size;
+#endif
 }
 
 /*!

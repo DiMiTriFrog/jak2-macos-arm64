@@ -7,16 +7,15 @@
 
 #include "common/log/log.h"
 
-#include "discord_jak3.h"
+#include "discord_jak2.h"
 #include "game/runtime.h"
 
 int gDiscordRpcEnabled;
 int64_t gStartTime;
 
 static const std::map<GameVersion, std::string> rpc_client_ids = {
-    {GameVersion::Jak1, "938876425585434654"},
     {GameVersion::Jak2, "1060390251694149703"},
-    {GameVersion::Jak3, "1226307413355790416"}};
+};
 
 void handleDiscordReady(const DiscordUser* user) {
   lg::info("Discord: connected to user {}#{} - {}", user->username, user->discriminator,
@@ -36,13 +35,9 @@ void handleDiscordJoinRequest(const DiscordUser* /*request*/) {}
 void handleDiscordSpectate(const char* /*secret*/) {}
 
 void init_discord_rpc() {
-  if (g_game_version != GameVersion::Jak1 && g_game_version != GameVersion::Jak2 &&
-      g_game_version != GameVersion::Jak3) {
+  if (g_game_version != GameVersion::Jak2) {
     lg::error("Game version unsupported for Discord RPC - {}", fmt::underlying(g_game_version));
     return;
-  }
-  if (g_game_version == GameVersion::Jak3) {
-    jak3::remap_hack();
   }
   gDiscordRpcEnabled = 1;
   DiscordEventHandlers handlers;

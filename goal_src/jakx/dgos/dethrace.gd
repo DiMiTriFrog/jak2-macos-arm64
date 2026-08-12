@@ -1,3 +1,0 @@
-("DETHRACE.DGO"
- ("dethrace.o"
- ))

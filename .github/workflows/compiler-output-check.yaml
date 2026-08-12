@@ -66,29 +66,19 @@ jobs:
 
       - name: Compile and preserve (master)
         run: |
-          ./build.master/goalc/goalc --game jak1 --cmd "(make-group \"all-code\")"
           ./build.master/goalc/goalc --game jak2 --cmd "(make-group \"all-code\")"
-          ./build.master/goalc/goalc --game jak3 --cmd "(make-group \"all-code\")"
-          mv ./out/jak1/obj ./out/jak1/obj.master
           mv ./out/jak2/obj ./out/jak2/obj.master
-          mv ./out/jak3/obj ./out/jak3/obj.master
 
       - name: Compile and preserve (PR)
         run: |
-          ./build/goalc/goalc --game jak1 --cmd "(make-group \"all-code\")"
           ./build/goalc/goalc --game jak2 --cmd "(make-group \"all-code\")"
-          ./build/goalc/goalc --game jak3 --cmd "(make-group \"all-code\")"
-          mv ./out/jak1/obj ./out/jak1/obj.pr
           mv ./out/jak2/obj ./out/jak2/obj.pr
-          mv ./out/jak3/obj ./out/jak3/obj.pr
 
       - name: Compare Results and Produce Report
         run: |
-          ls -l ./out/jak1
           ls -l ./out/jak2
-          ls -l ./out/jak3
           set +e
-          python ./scripts/gsrc/compare-compilation-outputs.py --base "./out/jak1/obj.master,./out/jak2/obj.master,./out/jak3/obj.master" --compare "./out/jak1/obj.pr,./out/jak2/obj.pr,./out/jak3/obj.pr" --markdown
+          python ./scripts/gsrc/compare-compilation-outputs.py --base "./out/jak2/obj.master" --compare "./out/jak2/obj.pr" --markdown
           SCRIPT_EXIT_CODE=$?
           cat ./comp-diff-report.md >> $GITHUB_STEP_SUMMARY
           if [ "$SCRIPT_EXIT_CODE" -ne 0 ]; then

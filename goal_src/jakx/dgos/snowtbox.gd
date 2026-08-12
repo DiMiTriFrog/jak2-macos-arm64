@@ -1,9 +1,0 @@
-("SNOWTBOX.DGO"
- ("net-time-box.o"
-  "time-box-obs.o"
-  "tpage-1784.go"
-  "tpage-2747.go"
-  "time-freeze-ag.go"
-  "time-freeze-debris-ag.go"
-  "snowtbox.o"
- ))

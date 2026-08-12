@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "common/jit_memory.h"
+#include "common/platform/BuildConfig.h"
 #include "common/util/Assert.h"
 
 #include "game/system/iop_thread.h"
@@ -193,7 +194,7 @@ u32 sceSifSetDma(sceSifDmaData* sdd, int len) {
   ASSERT(len <= 0xc000);
   // todo - sanity check the destination address.
   auto* destination = iop->ee_main_mem + (u64)(sdd->addr);
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
   // IOP DMA can write directly into a GOAL heap allocation without passing
   // through kmalloc. Restore write permission before the simulated transfer.
   jit_memory::make_writable(destination, sdd->size);

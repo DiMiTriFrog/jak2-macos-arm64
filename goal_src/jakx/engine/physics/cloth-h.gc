@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: cloth-h.gc
-;; name in dgo: cloth-h
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

@@ -1,9 +1,0 @@
-("CSX.DGO"
- ("spargus-obs.o"
-  "canspar-ocean.o"
-  "canyon-part.o"
-  "canyon-effects.o"
-  "tpage-2444.go"
-  "tpage-3012.go"
-  "cansparx-vis.o"
- ))

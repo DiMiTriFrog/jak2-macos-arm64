@@ -1,9 +1,0 @@
-("PEAKS.DGO"
- ("tpage-2914.o"
-  "tpage-3354.go"
-  "tpage-3363.go"
-  "tpage-2915.go"
-  "tpage-2751.go"
-  "peak-snowball-ag.go"
-  "peaks.o"
- ))

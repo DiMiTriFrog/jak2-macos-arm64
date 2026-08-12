@@ -13,44 +13,7 @@ parser.add_argument("--fix", action="store_true")
 parser.set_defaults(fix=False)
 args = parser.parse_args()
 
-JAK1_AUTOGLOT_IDS = [
-    "1110",
-    "1111",
-    "1112",
-    "1113",
-    "1114",
-    "1115",
-    "1116",
-    "1117",
-    "1118",
-    "1119",
-    "111a",
-    "111b",
-    "111c",
-    "111d",
-    "111e",
-    "111f",
-    "1120"
-]
 JAK2_AUTOGLOT_IDS = [
-    "133a",
-    "133c",
-    "133d",
-    "133e",
-    "133f",
-    "1340",
-    "1341",
-    "1342",
-    "1343",
-    "1344",
-    "1345",
-    "1346",
-    "1347",
-    "1348",
-    "1349",
-]
-
-JAK3_AUTOGLOT_IDS = [
     "133a",
     "133c",
     "133d",
@@ -95,11 +58,9 @@ def check_text_files(game_name, ids_to_check):
                 f.write("\n")
     return problem_found
 
-not_ok_jak1 = check_text_files("jak1", JAK1_AUTOGLOT_IDS)
 not_ok_jak2 = check_text_files("jak2", JAK2_AUTOGLOT_IDS)
-not_ok_jak3 = check_text_files("jak3", JAK3_AUTOGLOT_IDS)
 
-if not_ok_jak1 or not_ok_jak2 or not_ok_jak3:
+if not_ok_jak2:
     print("Autoglottonyms were changed, stop!")
     exit(1)
 else:

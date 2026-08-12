@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: speech-torn.gc
-;; name in dgo: speech-torn
-;; dgos: TORLEV
-
-;; DECOMP BEGINS
-

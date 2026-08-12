@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
   ArgumentGuard u8_guard(argc, argv);
 
   fs::path output_path;
-  std::string game_name = "jak1";
+  std::string game_name = "jak2";
   std::string parent_type = "";
   int method_id_min = -1;
   std::string type_size = "";
@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
   CLI::App app{"OpenGOAL Type Searcher"};
   app.add_option("--output-path", output_path, "Where to output the search results file");
   app.add_flag("-a,--all", get_all, "Just retrieve all possible type names");
-  app.add_option("-g,--game", game_name, "Specify the game name, defaults to 'jak1'");
+  app.add_option("-g,--game", game_name, "Specify the game name: 'jak2' only");
   app.add_option(
       "-s,--size", type_size,
       "The size of the type we are searching for, this can be a range (max-min), assumes decimal");
@@ -45,6 +45,11 @@ int main(int argc, char** argv) {
   app.validate_positionals();
   CLI11_PARSE(app, argc, argv);
 
+  if (game_name != "jak2") {
+    lg::error("Only Jak 2 is supported by this checkout");
+    return 1;
+  }
+
   auto ok = file_util::setup_project_path({});
   if (!ok) {
     lg::error("couldn't setup project path, exiting");
@@ -56,22 +61,7 @@ int main(int argc, char** argv) {
 
   decompiler::DecompilerTypeSystem dts(game_version);
 
-  switch (game_version) {
-    case GameVersion::Jak1:
-      dts.parse_type_defs({"decompiler", "config", "jak1", "all-types.gc"});
-      break;
-    case GameVersion::Jak2:
-      dts.parse_type_defs({"decompiler", "config", "jak2", "all-types.gc"});
-      break;
-    case GameVersion::Jak3:
-      dts.parse_type_defs({"decompiler", "config", "jak3", "all-types.gc"});
-      break;
-    case GameVersion::JakX:
-      dts.parse_type_defs({"decompiler", "config", "jakx", "all-types.gc"});
-    default:
-      lg::error("unsupported game version");
-      return 1;
-  }
+  dts.parse_type_defs({"decompiler", "config", "jak2", "all-types.gc"});
 
   auto results = nlohmann::json::array({});
 

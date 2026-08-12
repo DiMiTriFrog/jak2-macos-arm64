@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: lobby-profile.gc
-;; name in dgo: lobby-profile
-;; dgos: MENU2
-
-;; DECOMP BEGINS
-

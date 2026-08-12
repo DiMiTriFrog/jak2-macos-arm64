@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: driver-razer.gc
-;; name in dgo: driver-razer
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

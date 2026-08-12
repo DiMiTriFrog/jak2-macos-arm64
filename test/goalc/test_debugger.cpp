@@ -33,12 +33,12 @@ void connect_compiler_and_debugger(Compiler& compiler, bool do_break) {
   }
 }
 }  // namespace
-TEST(Jak1Debugger, DebuggerBasicConnect) {
-  Compiler compiler(GameVersion::Jak1, emitter::InstructionSet::X86);
+TEST(Jak2Debugger, DebuggerBasicConnect) {
+  Compiler compiler(GameVersion::Jak2, emitter::InstructionSet::X86);
   // evidently you can't ptrace threads in your own process, so we need to run the runtime in a
   // separate process.
   if (!fork()) {
-    GoalTest::runtime_no_kernel_jak1();
+    GoalTest::runtime_no_kernel_jak2();
     exit(0);
   } else {
     connect_compiler_and_debugger(compiler, true);
@@ -50,12 +50,12 @@ TEST(Jak1Debugger, DebuggerBasicConnect) {
   }
 }
 
-TEST(Jak1Debugger, DebuggerBreakAndContinue) {
-  Compiler compiler(GameVersion::Jak1, emitter::InstructionSet::X86);
+TEST(Jak2Debugger, DebuggerBreakAndContinue) {
+  Compiler compiler(GameVersion::Jak2, emitter::InstructionSet::X86);
   // evidently you can't ptrace threads in your own process, so we need to run the runtime in a
   // separate process.
   if (!fork()) {
-    GoalTest::runtime_no_kernel_jak1();
+    GoalTest::runtime_no_kernel_jak2();
     exit(0);
   } else {
     connect_compiler_and_debugger(compiler, true);
@@ -72,12 +72,12 @@ TEST(Jak1Debugger, DebuggerBreakAndContinue) {
   }
 }
 
-TEST(Jak1Debugger, DebuggerReadMemory) {
-  Compiler compiler(GameVersion::Jak1, emitter::InstructionSet::X86);
+TEST(Jak2Debugger, DebuggerReadMemory) {
+  Compiler compiler(GameVersion::Jak2, emitter::InstructionSet::X86);
   // evidently you can't ptrace threads in your own process, so we need to run the runtime in a
   // separate process.
   if (!fork()) {
-    GoalTest::runtime_no_kernel_jak1();
+    GoalTest::runtime_no_kernel_jak2();
     exit(0);
   } else {
     connect_compiler_and_debugger(compiler, true);
@@ -96,12 +96,12 @@ TEST(Jak1Debugger, DebuggerReadMemory) {
   }
 }
 
-TEST(Jak1Debugger, DebuggerWriteMemory) {
-  Compiler compiler(GameVersion::Jak1, emitter::InstructionSet::X86);
+TEST(Jak2Debugger, DebuggerWriteMemory) {
+  Compiler compiler(GameVersion::Jak2, emitter::InstructionSet::X86);
   // evidently you can't ptrace threads in your own process, so we need to run the runtime in a
   // separate process.
   if (!fork()) {
-    GoalTest::runtime_no_kernel_jak1();
+    GoalTest::runtime_no_kernel_jak2();
     exit(0);
   } else {
     connect_compiler_and_debugger(compiler, true);
@@ -127,12 +127,12 @@ TEST(Jak1Debugger, DebuggerWriteMemory) {
   }
 }
 
-TEST(Jak1Debugger, Symbol) {
-  Compiler compiler(GameVersion::Jak1, emitter::InstructionSet::X86);
+TEST(Jak2Debugger, Symbol) {
+  Compiler compiler(GameVersion::Jak2, emitter::InstructionSet::X86);
   // evidently you can't ptrace threads in your own process, so we need to run the runtime in a
   // separate process.
   if (!fork()) {
-    GoalTest::runtime_no_kernel_jak1();
+    GoalTest::runtime_no_kernel_jak2();
     exit(0);
   } else {
     connect_compiler_and_debugger(compiler, true);
@@ -158,12 +158,12 @@ TEST(Jak1Debugger, Symbol) {
   }
 }
 
-TEST(Jak1Debugger, SimpleBreakpoint) {
+TEST(Jak2Debugger, SimpleBreakpoint) {
   try {
-    Compiler compiler(GameVersion::Jak1, emitter::InstructionSet::X86);
+    Compiler compiler(GameVersion::Jak2, emitter::InstructionSet::X86);
 
     if (!fork()) {
-      GoalTest::runtime_no_kernel_jak1();
+      GoalTest::runtime_no_kernel_jak2();
       exit(0);
     } else {
       connect_compiler_and_debugger(compiler, false);

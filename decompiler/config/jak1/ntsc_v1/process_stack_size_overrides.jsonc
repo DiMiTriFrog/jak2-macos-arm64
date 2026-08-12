@@ -1,2 +1,0 @@
-// This overrides the stack size for calls to stack-size-set! in given functions.
-{}

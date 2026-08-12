@@ -223,6 +223,56 @@
       }
     },
     {
+      "name": "Debug-macos-arm64-aot-metal",
+      "displayName": "macOS ARM64 Debug AOT + Metal",
+      "description": "Build the no-JIT AOT runtime with the Metal backend",
+      "inherits": ["base-macos-arm64", "base-macos-debug", "base-clang"],
+      "cacheVariables": {
+        "OPENGOAL_EXECUTION_MODE": "AOT",
+        "OPENGOAL_GRAPHICS_BACKEND": "METAL"
+      }
+    },
+    {
+      "name": "Release-macos-arm64-aot-metal",
+      "displayName": "macOS ARM64 Release AOT + Metal",
+      "description": "Release build of the no-JIT AOT runtime with Metal",
+      "inherits": ["base-macos-arm64", "base-macos-release", "base-clang"],
+      "cacheVariables": {
+        "OPENGOAL_EXECUTION_MODE": "AOT",
+        "OPENGOAL_GRAPHICS_BACKEND": "METAL"
+      }
+    },
+    {
+      "name": "Debug-ios-simulator-arm64-aot-metal",
+      "displayName": "iOS Simulator ARM64 Debug AOT + Metal",
+      "description": "Build the AOT Metal runtime for the ARM64 iOS simulator",
+      "inherits": ["base-macos-debug", "base-clang"],
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_SYSROOT": "iphonesimulator",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_TRY_COMPILE_PLATFORM_VARIABLES": "CMAKE_SYSTEM_NAME;CMAKE_OSX_SYSROOT;CMAKE_OSX_ARCHITECTURES",
+        "OPENGOAL_EXECUTION_MODE": "AOT",
+        "OPENGOAL_GRAPHICS_BACKEND": "METAL",
+        "OG_BUILD_HOST_TOOLS": "OFF"
+      }
+    },
+    {
+      "name": "Release-ios-device-arm64-aot-metal",
+      "displayName": "iOS Device ARM64 Release AOT + Metal",
+      "description": "Unsigned device build of the AOT Metal runtime",
+      "inherits": ["base-macos-release", "base-clang"],
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_SYSROOT": "iphoneos",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_TRY_COMPILE_PLATFORM_VARIABLES": "CMAKE_SYSTEM_NAME;CMAKE_OSX_SYSROOT;CMAKE_OSX_ARCHITECTURES",
+        "OPENGOAL_EXECUTION_MODE": "AOT",
+        "OPENGOAL_GRAPHICS_BACKEND": "METAL",
+        "OG_BUILD_HOST_TOOLS": "OFF"
+      }
+    },
+    {
       "name": "Release-linux-clang-asan",
       "displayName": "Linux Release (clang-asan)",
       "description": "Build with Clang as Release without Debug Symbols and ASAN Fuzzing",

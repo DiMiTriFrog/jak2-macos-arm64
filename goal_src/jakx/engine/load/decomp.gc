@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: decomp.gc
-;; name in dgo: decomp
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

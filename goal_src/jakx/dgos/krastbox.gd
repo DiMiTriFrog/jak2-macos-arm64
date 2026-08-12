@@ -1,9 +1,0 @@
-("KRASTBOX.DGO"
- ("net-time-box.o"
-  "time-box-obs.o"
-  "tpage-1696.go"
-  "tpage-2612.go"
-  "time-freeze-ag.go"
-  "time-freeze-debris-ag.go"
-  "krastbox.o"
- ))

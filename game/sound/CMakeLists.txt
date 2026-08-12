@@ -1,3 +1,6 @@
+if(OG_TARGET_IOS)
+  set(SOUND_SOURCES ios_stub.cpp)
+else()
 set(SOUND_SOURCES
   989snd/player.cpp
   989snd/midi_handler.cpp
@@ -17,10 +20,16 @@ set(SOUND_SOURCES
   sndshim.cpp
   sdshim.cpp
   )
+endif()
 
 add_library(sound STATIC ${SOUND_SOURCES})
-target_link_libraries(sound PRIVATE fmt cubeb common)
+if(OG_TARGET_IOS)
+  target_link_libraries(sound PRIVATE common)
+else()
+  target_link_libraries(sound PRIVATE fmt cubeb common)
+endif()
 
+if(NOT OG_TARGET_IOS)
 add_executable(sndplay 989snd/sndplay.cpp)
 if(WIN32)
     target_link_libraries(sndplay PRIVATE sound cubeb)
@@ -28,6 +37,7 @@ elseif(APPLE)
     target_link_libraries(sndplay PRIVATE sound cubeb)
 else()
     target_link_libraries(sndplay PRIVATE sound cubeb stdc++fs)
+endif()
 endif()
 
 if (NOT WIN32)

@@ -50,17 +50,9 @@ jobs:
       - name: Build Project
         run: cmake --build build --parallel $((`nproc`)) --target goalc
 
-      - name: Generate Docs For Jak 1
-        run: |
-          ./build/goalc/goalc --cmd "(begin (make-group \"all-code\") (gen-docs \"${PWD}\"))" --game jak1
-
       - name: Generate Docs For Jak 2
         run: |
           ./build/goalc/goalc --cmd "(begin (make-group \"all-code\") (gen-docs \"${PWD}\"))" --game jak2
-
-      - name: Generate Docs For Jak 3
-        run: |
-          ./build/goalc/goalc --cmd "(begin (make-group \"all-code\") (gen-docs \"${PWD}\"))" --game jak3
 
       - name: Append File Docstrings
         run: |
@@ -72,9 +64,7 @@ jobs:
           name: opengoal-docs
           if-no-files-found: error
           path: |
-            ./jak1*.json
             ./jak2*.json
-            ./jak3*.json
 
       - name: Log Run ID
         run: echo ${{ github.run_id }}

@@ -10,7 +10,7 @@
 
 #include "fmt/format.h"
 
-constexpr GameVersion kGameVersion = GameVersion::Jak1;
+constexpr GameVersion kGameVersion = GameVersion::Jak2;
 
 /*!
  * Get the level data from a DGO File.

@@ -5,6 +5,7 @@
 
 #include "common/goal_constants.h"
 #include "common/jit_memory.h"
+#include "common/platform/BuildConfig.h"
 
 #include "game/kernel/common/kprint.h"
 #include "game/kernel/common/kscheme.h"
@@ -23,7 +24,7 @@ enum MemItemsCategory {
 int MemItemsCount[NUM_CATEGORIES] = {0, 0};
 int MemItemsSize[NUM_CATEGORIES] = {0, 0};
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
 struct Arm64FunctionPool {
   u32 heap_offset = 0;
   u32 next = 0;
@@ -59,7 +60,7 @@ void kmalloc_init_globals_common() {
     x = 0;
   for (auto& x : MemItemsSize)
     x = 0;
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
   for (auto& pool : arm64_function_pools) {
     pool = {};
   }
@@ -162,14 +163,14 @@ u32 kheapused(Ptr<kheapinfo> heap) {
  */
 Ptr<u8> kmalloc(Ptr<kheapinfo> heap, s32 size, u32 flags, char const* name) {
   uint32_t alignment_flag = flags & 0xfff;
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
   const s32 requested_size = size;
   const bool executable_allocation = (flags & KMALLOC_EXECUTABLE) != 0;
 #else
   constexpr bool executable_allocation = false;
 #endif
   uint32_t executable_page_size = 0;
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
   if (executable_allocation) {
     executable_page_size = static_cast<uint32_t>(jit_memory::page_size());
     if (size > 0) {
@@ -191,7 +192,7 @@ Ptr<u8> kmalloc(Ptr<kheapinfo> heap, s32 size, u32 flags, char const* name) {
 
   uint32_t memstart;
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
   // C-backed GOAL functions are tiny executable objects. Keep their pages
   // isolated from mutable heap data, but pack multiple objects into each page
   // instead of charging one 16 KiB page per 0x40-byte trampoline.
@@ -232,7 +233,7 @@ Ptr<u8> kmalloc(Ptr<kheapinfo> heap, s32 size, u32 flags, char const* name) {
   if (!(flags & KMALLOC_TOP)) {
     // allocate from bottom
     if (executable_allocation) {
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
       memstart = (heap->current.offset + executable_page_size - 1) &
                  ~(executable_page_size - 1);
 #else
@@ -258,7 +259,7 @@ Ptr<u8> kmalloc(Ptr<kheapinfo> heap, s32 size, u32 flags, char const* name) {
       return Ptr<u8>(0);
     }
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
     // A bottom allocation may reach a page previously used by a temporary
     // top-level segment after that segment's top pointer is reset. Restore RW
     // before the caller fills the allocation or clears it. Executable
@@ -277,7 +278,7 @@ Ptr<u8> kmalloc(Ptr<kheapinfo> heap, s32 size, u32 flags, char const* name) {
     }
 
     if (executable_allocation) {
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
       memstart = (heap->top.offset - size) & ~(executable_page_size - 1);
 #else
       memstart = heap->top.offset - size;
@@ -297,7 +298,7 @@ Ptr<u8> kmalloc(Ptr<kheapinfo> heap, s32 size, u32 flags, char const* name) {
       return Ptr<u8>(0);
     }
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
     // Top-level code is temporary.  Once its RX pages are returned to the
     // top allocator, a later mutable allocation may reuse them; restore RW
     // before the caller fills the allocation or clears it.

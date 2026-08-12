@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: wcar-possum.gc
-;; name in dgo: wcar-possum
-;; dgos: COMMON, GAME
-
-;; DECOMP BEGINS
-

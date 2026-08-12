@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: statistics.gc
-;; name in dgo: statistics
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

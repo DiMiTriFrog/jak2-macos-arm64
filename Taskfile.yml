@@ -11,14 +11,8 @@ tasks:
   # SETTINGS / CONFIGURATION
   settings:
     - "{{.PYTHON}} ./scripts/tasks/update-env.py --info"
-  set-game-jak1:
-    - "{{.PYTHON}} ./scripts/tasks/update-env.py --game jak1"
   set-game-jak2:
     - "{{.PYTHON}} ./scripts/tasks/update-env.py --game jak2"
-  set-game-jak3:
-    - "{{.PYTHON}} ./scripts/tasks/update-env.py --game jak3"
-  set-game-jakx:
-    - "{{.PYTHON}} ./scripts/tasks/update-env.py --game jakx"
   set-decomp-ntscv1:
     desc: "aka black label"
     cmds:

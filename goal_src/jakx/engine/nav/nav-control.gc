@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: nav-control.gc
-;; name in dgo: nav-control
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

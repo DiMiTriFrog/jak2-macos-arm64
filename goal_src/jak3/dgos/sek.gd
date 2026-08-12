@@ -1,9 +1,0 @@
-("SEK.DGO"
- ("tpage-1121.go"
-  "tpage-1784.go"
-  "tpage-1783.go"
-  "com-airlock-outer-ag.go"
-  "com-airlock-inner-ag.go"
-  "sew-curved-door-ag.go"
-  "sewk-vis.go"
- ))

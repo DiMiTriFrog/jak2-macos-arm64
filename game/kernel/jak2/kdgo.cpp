@@ -4,6 +4,7 @@
 #include "common/jit_memory.h"
 #include "common/link_types.h"
 #include "common/log/log.h"
+#include "common/platform/BuildConfig.h"
 #include "common/util/BitUtils.h"
 #include "common/util/FileUtil.h"
 #include "common/util/Timer.h"
@@ -169,7 +170,7 @@ void load_and_link_dgo_from_c_fast(const char* name,
 
   // load all but the final
   for (int i = 0; i < (int)header.object_count - 1; i++) {
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
     // Linking a previous object may have made part of this temporary buffer
     // executable. Reopen it before the next object is read into it.
     jit_memory::make_writable(buffer1.c(), static_cast<size_t>(bufferSize));
@@ -188,7 +189,7 @@ void load_and_link_dgo_from_c_fast(const char* name,
   }
 
   auto final_object_dest = Ptr<u8>((heap->current + 0x3f).offset & 0xffffffc0);
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
   jit_memory::make_writable(final_object_dest.c(), sizeof(ObjectHeader));
 #endif
   if (fread(final_object_dest.c(), sizeof(ObjectHeader), 1, fp) != 1) {
@@ -197,7 +198,7 @@ void load_and_link_dgo_from_c_fast(const char* name,
   auto* obj_header = (ObjectHeader*)final_object_dest.c();
   u32 aligned_size = align16(obj_header->size);
   auto* obj_dest = (final_object_dest + sizeof(ObjectHeader)).c();
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
   jit_memory::make_writable(obj_dest, static_cast<size_t>(aligned_size));
 #endif
   if (fread(obj_dest, aligned_size, 1, fp) != 1) {
@@ -233,7 +234,7 @@ void load_and_link_dgo_from_c(const char* name,
   auto buffer2 = kmalloc(heap, bufferSize, KMALLOC_TOP | KMALLOC_ALIGN_64, "dgo-buffer-2");
   auto buffer1 = kmalloc(heap, bufferSize, KMALLOC_TOP | KMALLOC_ALIGN_64, "dgo-buffer-2");
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
   jit_memory::make_writable(buffer1.c(), static_cast<size_t>(bufferSize));
   jit_memory::make_writable(buffer2.c(), static_cast<size_t>(bufferSize));
 #endif
@@ -250,7 +251,7 @@ void load_and_link_dgo_from_c(const char* name,
   sShowStallMsg = 0;
 
   // start load on IOP.
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
   jit_memory::make_writable(buffer1.c(), static_cast<size_t>(bufferSize));
   jit_memory::make_writable(buffer2.c(), static_cast<size_t>(bufferSize));
 #endif
@@ -289,7 +290,7 @@ void load_and_link_dgo_from_c(const char* name,
 
     // inform IOP we are done
     if (!lastObjectLoaded) {
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
       jit_memory::make_writable(buffer1.c(), static_cast<size_t>(bufferSize));
       jit_memory::make_writable(buffer2.c(), static_cast<size_t>(bufferSize));
 #endif

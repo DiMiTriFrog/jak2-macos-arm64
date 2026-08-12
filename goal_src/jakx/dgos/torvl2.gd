@@ -1,9 +1,0 @@
-("TORVL2.DGO"
- ("possum-chassis-ag.o"
-  "possum-door-c-ag.go"
-  "possum-f-fender-e-ag.go"
-  "possum-hood-e-ag.go"
-  "possum-trunk-d-ag.go"
-  "wheel-c-ag.go"
-  "torvl2.o"
- ))

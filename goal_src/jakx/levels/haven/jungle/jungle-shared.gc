@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: jungle-shared.gc
-;; name in dgo: jungle-shared
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

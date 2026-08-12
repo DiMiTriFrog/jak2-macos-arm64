@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
 
   CLI::App app{"OpenGOAL Compiler / REPL"};
   app.add_option("input-model", mdl_name,
-                 "Input model file (for example: custom_assets/jak1/models/test.glb)")
+                 "Input model file (for example: custom_assets/jak2/models/test.glb)")
       ->required();
   app.add_option("output-file", output_file,
                  "Output *-ag.go file (for example: out/jak1/obj/test-ag.go)")

@@ -1,9 +1,0 @@
-("ICX.DGO"
- ("peak-part.o"
-  "peak-obs.o"
-  "ice-obs.o"
-  "tpage-2719.go"
-  "tpage-3120.go"
-  "ice-flag-ag.go"
-  "icex-vis.o"
- ))

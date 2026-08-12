@@ -1,8 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: desertd-obs.gc
-;; name in dgo: desertd-obs
-;; dgos: DESD, WIN
-
-;; DECOMP BEGINS

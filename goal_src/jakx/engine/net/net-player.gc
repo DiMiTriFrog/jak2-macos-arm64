@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: net-player.gc
-;; name in dgo: net-player
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

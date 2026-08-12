@@ -1,5 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-(defmacro pc-cheats? (obj &rest cheats)
-  `(logtest? ,obj (pc-cheats ,@cheats)))

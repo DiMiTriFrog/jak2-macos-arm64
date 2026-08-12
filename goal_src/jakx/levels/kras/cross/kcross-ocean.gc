@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: kcross-ocean.gc
-;; name in dgo: kcross-ocean
-;; dgos: KCR, KCRX
-
-;; DECOMP BEGINS
-

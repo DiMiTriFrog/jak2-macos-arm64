@@ -8,7 +8,6 @@
 #include "game/graphics/display.h"
 #include "game/graphics/gfx.h"
 #include "game/graphics/screenshot.h"
-#include "game/overlord/jak3/dma.h"
 #include "game/system/hid/sdl_util.h"
 
 #include "fmt/format.h"
@@ -263,13 +262,8 @@ void OpenGlDebugGui::draw(const DmaStats& dma_stats) {
 
 void OpenGlDebugGui::draw_overlord_debug_menu() {
   ImGui::Begin("Overlord");
-
-  for (int stream_idx = 0; stream_idx < 6; stream_idx++) {
-    auto& stream = jak3::g_overlord_stream_memory.infos[stream_idx];
-
-    ImGui::Text("%30s [%3d] | %30s [%3d]", stream[0].name.chars, stream[0].idx,
-                stream[1].name.chars, stream[1].idx);
-  }
+  ImGui::TextUnformatted("Jak 2 Overlord stream details are not exposed here.");
+  ImGui::End();
 }
 
 namespace ImGui {

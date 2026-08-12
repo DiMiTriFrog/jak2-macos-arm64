@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: joint-exploder.gc
-;; name in dgo: joint-exploder
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

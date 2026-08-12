@@ -33,9 +33,7 @@ def print_table(game, stats, total_gc_files):
     print("-------------------------------------")
     estimated_lines = 500000
     if game == "jak2":
-      estimated_lines = 1000000
-    elif game == "jak3":
-      estimated_lines = 1200000
+        estimated_lines = 1000000
     print("Progress: {}/{} lines ({:.2f}%)".format(total_lines, estimated_lines, 100. * total_lines / estimated_lines))
     print("{}/{} files modified from template ({:.2f}%)".format(len(stats), total_gc_files,
                                                                 100. * len(stats) / total_gc_files))
@@ -43,12 +41,12 @@ def print_table(game, stats, total_gc_files):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(dest='game', help='game name')
+    parser.add_argument(dest='game', choices=['jak2'], help='game name')
     args = parser.parse_args()
-    gsrc_path = "../goal_src/" + args.game
+    gsrc_path = "../goal_src/jak2"
     all_files = get_goal_files(gsrc_path)
 
-    ref_files = get_goal_files("../test/decompiler/reference/" + args.game, "*_REF.gc")
+    ref_files = get_goal_files("../test/decompiler/reference/jak2", "*_REF.gc")
     ref_files_no_ext = [os.path.basename(fn)[:-7] for fn in ref_files]
 
     file_stats = []

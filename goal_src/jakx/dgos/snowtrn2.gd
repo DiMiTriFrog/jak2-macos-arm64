@@ -1,9 +1,0 @@
-("SNOWTRN2.DGO"
- ("net-training.o"
-  "net-training-obs.o"
-  "wcar-drone.o"
-  "tpage-2268.go"
-  "tpage-3912.go"
-  "deathrace-drone-ag.go"
-  "snowtrn2.o"
- ))

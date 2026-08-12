@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
 
   // CLI flags
   bool show_version = false;
-  std::string game_name = "jak1";
+  std::string game_name = "jak2";
   bool verbose_logging = false;
   bool disable_avx2 = false;
   bool disable_display = false;
@@ -107,11 +107,11 @@ int main(int argc, char** argv) {
   std::vector<std::string> game_args;
   CLI::App app{"OpenGOAL Game Runtime"};
   app.add_flag("--version", show_version, "Display the built revision");
-  app.add_option("-g,--game", game_name, "The game name: 'jak1' or 'jak2'");
+  app.add_option("-g,--game", game_name, "The game name: 'jak2' only");
   app.add_flag("-v,--verbose", verbose_logging, "Enable verbose logging on stdout");
   app.add_option(
       "--port", port_number,
-      "Specify port number for listener connection (default is 8112 for Jak 1 and 8113 for Jak 2)");
+      "Specify port number for listener connection (default is 8113 for Jak 2)");
   app.add_flag("--no-avx2", disable_avx2, "Disable AVX2 for testing");
   app.add_flag("--no-display", disable_display, "Disable video display");
   app.add_flag("--profile", enable_profiling, "Enables profiling immediately from startup");
@@ -137,6 +137,11 @@ int main(int argc, char** argv) {
   define_common_cli_arguments(app);
   app.allow_extras();
   CLI11_PARSE(app, argc, argv);
+
+  if (game_name != "jak2") {
+    lg::error("Only Jak 2 is supported by this checkout");
+    return 1;
+  }
 
   // Log the version the game is compiled against so we don't have to guess
   lg::info("Compiled Version: {}", build_revision());

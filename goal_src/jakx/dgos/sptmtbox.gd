@@ -1,9 +1,0 @@
-("SPTMTBOX.DGO"
- ("net-time-box.o"
-  "time-box-obs.o"
-  "tpage-3468.go"
-  "tpage-3469.go"
-  "time-freeze-ag.go"
-  "time-freeze-debris-ag.go"
-  "sptmtbox.o"
- ))

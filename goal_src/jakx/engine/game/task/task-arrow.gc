@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: task-arrow.gc
-;; name in dgo: task-arrow
-;; dgos: COMMON, GAME
-
-;; DECOMP BEGINS
-

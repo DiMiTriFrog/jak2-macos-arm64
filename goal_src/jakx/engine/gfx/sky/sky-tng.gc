@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: sky-tng.gc
-;; name in dgo: sky-tng
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

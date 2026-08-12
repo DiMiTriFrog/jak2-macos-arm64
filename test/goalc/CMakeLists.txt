@@ -3,9 +3,7 @@
 
 if(CMAKE_APPLE_SILICON_PROCESSOR STREQUAL "arm64")
     set(GOALC_TEST_CASES
-        # ${CMAKE_CURRENT_LIST_DIR}/test_goal_kernel.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_goal_kernel2.cpp
-        # ${CMAKE_CURRENT_LIST_DIR}/test_goal_kernel3.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_CodeTester.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_register_info.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_arm64_ir_core.cpp
@@ -36,9 +34,7 @@ if(CMAKE_APPLE_SILICON_PROCESSOR STREQUAL "arm64")
     )
 else()
     set(GOALC_TEST_CASES
-        ${CMAKE_CURRENT_LIST_DIR}/test_goal_kernel.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_goal_kernel2.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/test_goal_kernel3.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_CodeTester.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_register_info.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_arm64_ir_core.cpp
@@ -63,7 +59,6 @@ else()
         ${CMAKE_CURRENT_LIST_DIR}/test_game_no_debug.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_jak2_compiler.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_variables.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/test_with_game.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_type_consistency.cpp
         ${CMAKE_CURRENT_LIST_DIR}/test_vector_float.cpp
     )

@@ -161,6 +161,8 @@ struct VagCmd;
 
 int NullCallback(CmdHeader* cmd, Buffer* buff);
 u32 InitISOFS();
+FileRecord* FindISOFile(const char* name);
+u32 GetISOFileLength(FileRecord* file_record);
 void IsoStopVagStream(VagCmd* param_1, int param_2);
 void ProcessMessageData();
 void IsoPlayVagStream(VagCmd* param_1, int param_2);

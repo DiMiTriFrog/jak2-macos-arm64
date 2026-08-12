@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "common/common_types.h"
+#include "common/platform/BuildConfig.h"
 
 #ifdef OS_POSIX
 #include <unistd.h>
@@ -23,7 +24,7 @@ namespace jit_memory {
 
 enum class Protection { Writable, Executable, NoAccess };
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
 #if !defined(MAP_JIT)
 #error "Apple ARM64 builds require MAP_JIT"
 #endif
@@ -103,6 +104,11 @@ inline int protection_flags(Protection protection) {
 }
 
 inline void set_protection(void* address, size_t size, Protection protection) {
+#if OG_EXECUTION_MODE_AOT
+  if (protection == Protection::Executable) {
+    throw std::logic_error("executable anonymous memory is disabled in AOT mode");
+  }
+#endif
 #if defined(OS_POSIX) || defined(_WIN32)
   if (protection != Protection::NoAccess && !kRequiresWxorX) {
     return;
@@ -214,7 +220,7 @@ class JitRegion {
     const auto mapped_size = round_up_to_page(requested_size);
 #if defined(OS_POSIX) || defined(_WIN32)
     int flags = MAP_ANONYMOUS | MAP_PRIVATE;
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__) && !OG_EXECUTION_MODE_AOT
     flags |= MAP_JIT;
 #endif
     const int prot =

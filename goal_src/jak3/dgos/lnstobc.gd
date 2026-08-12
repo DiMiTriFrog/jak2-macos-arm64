@@ -1,3 +1,0 @@
-("LNSTOBC.DGO"
- ("lnstobc.go"
- ))

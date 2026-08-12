@@ -4,7 +4,7 @@
 ;; Jak 2 Project File
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; see goal_src/jak1/game.gp for more detailed explanation
+;; This project file is self-contained for the Jak 2 ARM64 snapshot.
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;; Inputs from ISO
@@ -309,7 +309,7 @@
 (custom-level-cgo "TSZ.DGO" "test-zone/testzone.gd")
 
 ;; generate the art group for a custom actor.
-;; requires a .glb model file in custom_assets/jak1/models/custom_levels
+;; requires a .glb model file in custom_assets/jak2/models/custom_levels
 ;; options:
 ;; - gen-mesh: when #t, generates a collision mesh for this actor.
 ;; - force-run: when #t, always forces a rebuild of the actor instead of checking the "last modified" timestamp.
@@ -478,4 +478,3 @@
        "$OUT/iso/VAGDIR.AYB"
        "$OUT/iso/VAGWAD.ENG"
        )
-

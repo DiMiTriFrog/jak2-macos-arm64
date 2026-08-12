@@ -12,7 +12,7 @@ int main(int argc, char** argv) {
   lg::initialize();
 
   // game version
-  std::string game = "jak1";
+  std::string game = "jak2";
   std::string target_arch = "x86_64";
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
@@ -21,6 +21,10 @@ int main(int argc, char** argv) {
     } else {
       game = arg;
     }
+  }
+  if (game != "jak2") {
+    lg::error("Only Jak 2 is supported by this checkout");
+    return 1;
   }
   GameVersion game_version = game_name_to_version(game);
 

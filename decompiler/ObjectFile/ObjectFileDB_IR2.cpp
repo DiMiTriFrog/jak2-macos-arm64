@@ -83,7 +83,7 @@ void ObjectFileDB::process_object_file_data(
   ir2_symbol_definition_map(data);
 
   // TODO - insert the game_name into the import line automatically
-  // instead of `goal_src/jak1/import/something.gc`
+  // instead of `goal_src/jak2/import/something.gc`
   // just `import/something.gc`
   //
   // Can be relative to the root of the source directory

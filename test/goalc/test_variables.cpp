@@ -13,8 +13,8 @@ struct VariableParam {
 class VariableTests : public testing::TestWithParam<VariableParam> {
  public:
   static void SetUpTestSuite() {
-    shared_compiler = std::make_unique<SharedCompiler>(GameVersion::Jak1);
-    shared_compiler->runtime_thread = std::thread(GoalTest::runtime_no_kernel_jak1);
+    shared_compiler = std::make_unique<SharedCompiler>(GameVersion::Jak2);
+    shared_compiler->runtime_thread = std::thread(GoalTest::runtime_no_kernel_jak2);
     shared_compiler->runner.c = &shared_compiler->compiler;
   }
 

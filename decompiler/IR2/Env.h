@@ -88,7 +88,7 @@ struct FunctionVariableDefinitions {
  */
 class Env {
  public:
-  GameVersion version = GameVersion::Jak1;
+  GameVersion version = GameVersion::Jak2;
   bool types_succeeded = false;
   bool has_local_vars() const { return m_has_local_vars; }
   bool has_type_analysis() const { return m_has_types; }

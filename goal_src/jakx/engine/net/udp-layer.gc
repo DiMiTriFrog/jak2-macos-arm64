@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: udp-layer.gc
-;; name in dgo: udp-layer
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

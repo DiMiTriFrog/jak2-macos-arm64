@@ -1,9 +1,0 @@
-("TPX.DGO"
- ("temple-ocean.o"
-  "temple-part.o"
-  "temple-effects.o"
-  "tpage-2698.go"
-  "tpage-2699.go"
-  "tpage-3779.go"
-  "templex-vis.o"
- ))

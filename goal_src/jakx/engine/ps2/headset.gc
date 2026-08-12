@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: headset.gc
-;; name in dgo: headset
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

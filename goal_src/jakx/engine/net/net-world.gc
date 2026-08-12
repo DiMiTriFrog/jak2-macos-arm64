@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: net-world.gc
-;; name in dgo: net-world
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

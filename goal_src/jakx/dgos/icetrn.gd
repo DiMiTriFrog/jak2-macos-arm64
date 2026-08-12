@@ -1,9 +1,0 @@
-("ICETRN.DGO"
- ("net-training.o"
-  "net-training-obs.o"
-  "wcar-drone.o"
-  "tpage-3834.go"
-  "tpage-3913.go"
-  "finish-banner-ag.go"
-  "icetrn.o"
- ))

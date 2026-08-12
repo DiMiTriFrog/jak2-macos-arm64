@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: editable.gc
-;; name in dgo: editable
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

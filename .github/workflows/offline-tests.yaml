@@ -104,16 +104,6 @@ jobs:
           PREP_BIN=false ./.github/scripts/releases/extract_build_unix.sh ./ci-artifacts ./build ./
           cp ./build/decompiler/extractor ./ci-artifacts
 
-      - name: Install Jak 1
-        run: |
-          cd ./ci-artifacts
-          ./extractor ~/isos/jak1_ntsc.iso --game jak1 --extract --validate --proj-path "$PWD/data"
-          ./extractor ~/isos/jak1_ntsc.iso --game jak1 --decompile --proj-path "$PWD/data"
-          ./extractor ~/isos/jak1_ntsc.iso --game jak1 --compile --proj-path "$PWD/data"
-          rm -r ./data/out || true
-          rm -r ./data/iso_data || true
-          rm -r ./data/decompiler_out || true
-
       - name: Install Jak 2
         run: |
           cd ./ci-artifacts
@@ -124,26 +114,9 @@ jobs:
           rm -r ./data/iso_data || true
           rm -r ./data/decompiler_out || true
 
-      - name: Install Jak 3
-        run: |
-          cd ./ci-artifacts
-          ./extractor ~/isos/jak3_ntsc.iso --game jak3 --extract --validate --proj-path "$PWD/data"
-          ./extractor ~/isos/jak3_ntsc.iso --game jak3 --decompile --proj-path "$PWD/data"
-          ./extractor ~/isos/jak3_ntsc.iso --game jak3 --compile --proj-path "$PWD/data"
-          rm -r ./data/out || true
-          rm -r ./data/iso_data || true
-          rm -r ./data/decompiler_out || true
-
       - name: Cleanup Installation
         run: |
           rm -r ./ci-artifacts || true
-
-      - name: Run Offline Tests - Jak 1
-        run: |
-          7z x ~/isos/jak1_ntsc.iso -o./iso_data/jak1 -aos
-          task set-game-jak1
-          task offline-tests
-          rm -rf ./iso_data/jak1/*
 
       - name: Run Offline Tests - Jak 2
         run: |
@@ -151,10 +124,3 @@ jobs:
           task set-game-jak2
           task offline-tests
           rm -rf ./iso_data/jak2/*
-
-      - name: Run Offline Tests - Jak 3
-        run: |
-          7z x ~/isos/jak3_ntsc.iso -o./iso_data/jak3 -aos
-          task set-game-jak3
-          task offline-tests
-          rm -rf ./iso_data/jak3/*

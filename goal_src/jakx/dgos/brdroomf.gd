@@ -1,9 +1,0 @@
-("BRDROOMF.DGO"
- ("brdroom-obs.o"
-  "brdroom-part.o"
-  "tpage-546.go"
-  "tpage-1544.go"
-  "tpage-1119.go"
-  "brd-pool-water-ag.go"
-  "brdroom.o"
- ))

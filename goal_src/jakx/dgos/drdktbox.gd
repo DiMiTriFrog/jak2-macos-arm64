@@ -1,9 +1,0 @@
-("DRDKTBOX.DGO"
- ("net-time-box.o"
-  "time-box-obs.o"
-  "tpage-3454.go"
-  "tpage-3455.go"
-  "time-freeze-ag.go"
-  "time-freeze-debris-ag.go"
-  "drdktbox.o"
- ))

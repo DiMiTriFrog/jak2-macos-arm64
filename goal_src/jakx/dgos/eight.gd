@@ -1,9 +1,0 @@
-("EIGHT.DGO"
- ("tpage-96.o"
-  "tpage-260.go"
-  "tpage-1195.go"
-  "eco-dark-ag.go"
-  "eco-light-ag.go"
-  "crate-ag.go"
-  "eight.o"
- ))

@@ -1,9 +1,0 @@
-("PEAKTBOX.DGO"
- ("net-time-box.o"
-  "time-box-obs.o"
-  "tpage-3464.go"
-  "tpage-3465.go"
-  "time-freeze-ag.go"
-  "time-freeze-debris-ag.go"
-  "peaktbox.o"
- ))

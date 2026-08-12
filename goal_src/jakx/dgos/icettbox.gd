@@ -1,9 +1,0 @@
-("ICETTBOX.DGO"
- ("net-time-box.o"
-  "time-box-obs.o"
-  "tpage-3460.go"
-  "tpage-3461.go"
-  "time-freeze-ag.go"
-  "time-freeze-debris-ag.go"
-  "icettbox.o"
- ))

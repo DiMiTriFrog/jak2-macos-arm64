@@ -8,9 +8,9 @@
   - [`goal_src/`](#goal_src)
   - [`game` runtime](#game-runtime)
 
-There are four main components to the project.
+This checkout contains four main components focused on the Jak 2 port.
 
-1. `goalc` - the GOAL compiler for x86-64
+1. `goalc` - the GOAL compiler for x86-64 and ARM64 hosts
 2. `decompiler` - our decompiler
 3. `goal_src/` - the folder containing all OpenGOAL / GOOS code
 4. `game` - aka the runtime written in C++
@@ -45,7 +45,7 @@ The decompiler will output code and other data intended to be inspected by human
 
 ### Running the decompiler
 
-You must have a copy of the PS2 game and place all files from the DVD inside a folder corresponding to the game within `iso_data` folder (`jak1` for Jak 1 Black Label, etc.), as seen in this picture:
+You must have a legal copy of Jak 2 and place the files from its PS2 DVD inside `iso_data/jak2`, as seen in this picture:
 
 ![](./docs/img/iso_data-help.png)
 
@@ -57,11 +57,11 @@ If you have installed `task` as recommended above, you can run the compiler with
 
 **Linux**
 
-To run, you can use `scripts/shell/decomp.sh` to run the decompiler
+To run, you can use `scripts/shell/decomp2.sh` to run the Jak 2 decompiler
 
 **Windows**
 
-To run, you can use `scripts/shell/decomp-jak1.bat` to run the decompiler
+To run, you can use one of the `scripts/batch/decomp-jak2*.bat` scripts to run the decompiler
 
 ## `goal_src/`
 

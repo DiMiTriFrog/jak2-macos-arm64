@@ -11,8 +11,8 @@ args = parser.parse_args()
 
 # TODO - read from defaults
 file = {
-  "GAME": "jak1",
-  "DECOMP_CONFIG": "jak1/jak1_config.jsonc",
+  "GAME": "jak2",
+  "DECOMP_CONFIG": "jak2/jak2_config.jsonc",
   "DECOMP_CONFIG_VERSION": "ntsc_v1"
 }
 
@@ -34,52 +34,28 @@ if args.info:
   print(file)
   sys.exit(0)
 
-valid_games = ["jak1", "jak2", "jak3", "jakx"]
+valid_games = ["jak2"]
 
 decomp_config_map = {
-  "jak1": "jak1/jak1_config.jsonc",
-  "jak2": "jak2/jak2_config.jsonc",
-  "jak3": "jak3/jak3_config.jsonc",
-  "jakx": "jakx/jakx_config.jsonc"
+  "jak2": "jak2/jak2_config.jsonc"
 }
 
 decomp_config_version_map = {
-  "jak1": {
-    "ntscv1": "ntsc_v1",
-    "ntscv2": "ntsc_v2",
-    "pal": "pal",
-    "ntscjp": "jp"
-  },
   "jak2": {
     "ntscv1": "ntsc_v1",
     "ntscv2": "ntsc_v2",
     "pal": "pal",
     "ntscjp": "jp",
     "ntscko": "kor"
-  },
-  # TODO other versions
-  "jak3": {
-    "ntscv1": "ntsc_v1",
-    "pal": "pal"
-  },
-  "jakx": {
-    "ntscv1": "ntsc_v1",
-    "pal": "pal"
   }
 }
 
 default_config_version_map = {
-  "jak1": "ntsc_v1",
-  "jak2": "ntsc_v1",
-  "jak3": "ntsc_v1",
-  "jakx": "ntsc_v1"
+  "jak2": "ntsc_v1"
 }
 
 type_consistency_filter_map = {
-  "jak1": "Jak1TypeConsistency",
-  "jak2": "Jak2TypeConsistency",
-  "jak3": "Jak3TypeConsistency",
-  "jakx": "JakXTypeConsistency"
+  "jak2": "Jak2TypeConsistency"
 }
 
 if args.game:

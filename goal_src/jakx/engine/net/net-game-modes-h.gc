@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: net-game-modes-h.gc
-;; name in dgo: net-game-modes-h
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

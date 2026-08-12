@@ -72,13 +72,6 @@ class SubtitleV2Tool : public Tool {
   bool needs_run(const ToolInput& task, const PathMap& path_map) override;
 };
 
-class BuildLevelTool : public Tool {
- public:
-  BuildLevelTool();
-  bool run(const ToolInput& task, const PathMap& path_map) override;
-  bool needs_run(const ToolInput& task, const PathMap& path_map) override;
-};
-
 class BuildLevel2Tool : public Tool {
  public:
   BuildLevel2Tool();
@@ -86,36 +79,9 @@ class BuildLevel2Tool : public Tool {
   bool needs_run(const ToolInput& task, const PathMap& path_map) override;
 };
 
-class BuildLevel3Tool : public Tool {
- public:
-  BuildLevel3Tool();
-  bool run(const ToolInput& task, const PathMap& path_map) override;
-  bool needs_run(const ToolInput& task, const PathMap& path_map) override;
-};
-
-class BuildActorTool : public Tool {
- public:
-  BuildActorTool();
-  bool run(const ToolInput& task, const PathMap& path_map) override;
-  bool needs_run(const ToolInput& task, const PathMap& path_map) override;
-
- private:
-  goos::Reader m_reader;
-};
-
 class BuildActor2Tool : public Tool {
  public:
   BuildActor2Tool();
-  bool run(const ToolInput& task, const PathMap& path_map) override;
-  bool needs_run(const ToolInput& task, const PathMap& path_map) override;
-
- private:
-  goos::Reader m_reader;
-};
-
-class BuildActor3Tool : public Tool {
- public:
-  BuildActor3Tool();
   bool run(const ToolInput& task, const PathMap& path_map) override;
   bool needs_run(const ToolInput& task, const PathMap& path_map) override;
 

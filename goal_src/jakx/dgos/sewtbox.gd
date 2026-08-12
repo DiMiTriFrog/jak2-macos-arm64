@@ -1,9 +1,0 @@
-("SEWTBOX.DGO"
- ("net-time-box.o"
-  "time-box-obs.o"
-  "tpage-2623.go"
-  "tpage-2624.go"
-  "time-freeze-ag.go"
-  "time-freeze-debris-ag.go"
-  "sewtbox.o"
- ))

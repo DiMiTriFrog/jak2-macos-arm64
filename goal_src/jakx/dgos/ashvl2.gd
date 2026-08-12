@@ -1,9 +1,0 @@
-("ASHVL2.DGO"
- ("falcon-chassis-ag.o"
-  "falcon-door-e-ag.go"
-  "falcon-hood-e-ag.go"
-  "falcon-roof-e-ag.go"
-  "falcon-trunk-e-ag.go"
-  "wheel-n-ag.go"
-  "ashvl2.o"
- ))

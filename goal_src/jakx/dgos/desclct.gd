@@ -1,9 +1,0 @@
-("DESCLCT.DGO"
- ("net-collectable-game.o"
-  "tpage-910.go"
-  "tpage-923.go"
-  "collectoid-debris-ag.go"
-  "crate-ag.go"
-  "collectoid-ag.go"
-  "desclct.o"
- ))

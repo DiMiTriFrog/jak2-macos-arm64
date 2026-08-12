@@ -1,9 +1,0 @@
-("RAYVL2.DGO"
- ("tiger-chassis-ag.o"
-  "tiger-door-e-ag.go"
-  "tiger-hood-e-ag.go"
-  "tiger-r-fender-a-ag.go"
-  "tiger-roof-e-ag.go"
-  "wheel-a-ag.go"
-  "rayvl2.o"
- ))

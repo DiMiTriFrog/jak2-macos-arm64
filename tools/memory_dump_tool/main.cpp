@@ -611,7 +611,7 @@ int main(int argc, char** argv) {
 
   fs::path dump_path;
   fs::path output_path;
-  std::string game_name = "jak1";
+  std::string game_name = "jak2";
 
   lg::initialize();
 
@@ -619,9 +619,14 @@ int main(int argc, char** argv) {
   app.add_option("dump-path", dump_path, "The path to the dump file to analyze")->required();
   app.add_option("--output-path", output_path,
                  "Where the output files should be sent, defaults to current directory otherwise");
-  app.add_option("-g,--game", game_name, "Specify the game name, defaults to 'jak1'");
+  app.add_option("-g,--game", game_name, "Specify the game name: 'jak2' only");
   app.validate_positionals();
   CLI11_PARSE(app, argc, argv);
+
+  if (game_name != "jak2") {
+    lg::error("Only Jak 2 is supported by this checkout");
+    return 1;
+  }
 
   auto ok = file_util::setup_project_path({});
   if (!ok) {
@@ -634,15 +639,7 @@ int main(int argc, char** argv) {
 
   decompiler::DecompilerTypeSystem dts(game_version);
 
-  // TODO - this could be better (have a `jak1` folder)
-  if (game_version == GameVersion::Jak1) {
-    dts.parse_type_defs({"decompiler", "config", "all-types.gc"});
-  } else if (game_version == GameVersion::Jak2) {
-    dts.parse_type_defs({"decompiler", "config", "jak2", "all-types.gc"});
-  } else {
-    lg::error("unsupported game version");
-    return 1;
-  }
+  dts.parse_type_defs({"decompiler", "config", "jak2", "all-types.gc"});
 
   fs::path output_folder;
 

@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
   CLI::App app{"OpenGOAL Decompiler"};
   app.add_option("config-path", config_path,
                  "Path to the decompiler config .jsonc file. ie. "
-                 "./decompiler/config/jak1/jak1_config.jsonc")
+                 "./decompiler/config/jak2/jak2_config.jsonc")
       ->required();
   app.add_option("in-folder", in_folder,
                  "The path containing the iso_data folders. ie. ./iso_data/. Assumes the "

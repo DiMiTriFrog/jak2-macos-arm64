@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: driver-klever.gc
-;; name in dgo: driver-klever
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

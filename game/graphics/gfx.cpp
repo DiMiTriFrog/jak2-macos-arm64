@@ -21,7 +21,12 @@
 #include "game/kernel/common/kmachine.h"
 #include "game/kernel/common/kscheme.h"
 #include "game/runtime.h"
+#include "common/platform/BuildConfig.h"
+#if OG_GRAPHICS_BACKEND_METAL
+#include "pipelines/metal.h"
+#else
 #include "pipelines/opengl.h"
+#endif
 
 namespace Gfx {
 
@@ -36,7 +41,19 @@ const GfxRendererModule* GetRenderer(GfxPipeline pipeline) {
       lg::error("Requested invalid renderer", fmt::underlying(pipeline));
       return NULL;
     case GfxPipeline::OpenGL:
+#if OG_GRAPHICS_BACKEND_METAL
+      lg::error("OpenGL renderer requested from a Metal build");
+      return NULL;
+#else
       return &gRendererOpenGL;
+#endif
+    case GfxPipeline::Metal:
+#if OG_GRAPHICS_BACKEND_METAL
+      return &gRendererMetal;
+#else
+      lg::error("Metal renderer requested from an OpenGL build");
+      return NULL;
+#endif
     default:
       lg::error("Requested unknown renderer {}", fmt::underlying(pipeline));
       return NULL;
@@ -59,7 +76,11 @@ u32 Init(GameVersion version) {
   g_debug_settings.load_settings();
   {
     auto p = scoped_prof("startup::gfx::get_renderer");
+#if OG_GRAPHICS_BACKEND_METAL
+    g_global_settings.renderer = GetRenderer(GfxPipeline::Metal);
+#else
     g_global_settings.renderer = GetRenderer(GfxPipeline::OpenGL);
+#endif
   }
 
   {

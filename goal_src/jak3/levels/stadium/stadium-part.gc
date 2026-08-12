@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: stadium-part.gc
-;; name in dgo: stadium-part
-;; dgos: STA
-
-;; DECOMP BEGINS
-

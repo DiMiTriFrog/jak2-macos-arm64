@@ -353,13 +353,7 @@ def fix_games_translations(
 
 
 fix_games_translations(
-    "jak1", JAK1_ALLOWED_CHARACTERS, JAK1_ALLOWED_CODES, JAK1_AUTO_REPLACEMENTS
-)
-fix_games_translations(
     "jak2", JAK2_ALLOWED_CHARACTERS, JAK2_ALLOWED_CODES, JAK2_AUTO_REPLACEMENTS
-)
-fix_games_translations(
-    "jak3", JAK3_ALLOWED_CHARACTERS, JAK3_ALLOWED_CODES, JAK3_AUTO_REPLACEMENTS
 )
 
 if return_error:

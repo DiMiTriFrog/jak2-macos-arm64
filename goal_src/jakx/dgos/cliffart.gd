@@ -1,9 +1,0 @@
-("CLIFFART.DGO"
- ("net-artifact.o"
-  "tpage-1604.go"
-  "pre-artifact-a-ag.go"
-  "pre-artifact-d-ag.go"
-  "pre-artifact-b-ag.go"
-  "pre-artifact-c-ag.go"
-  "cliffart.o"
- ))

@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: wcar-daxtermobile.gc
-;; name in dgo: wcar-daxtermobile
-;; dgos: COMMON, GAME
-
-;; DECOMP BEGINS
-

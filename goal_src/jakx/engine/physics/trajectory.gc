@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: trajectory.gc
-;; name in dgo: trajectory
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

@@ -1,3 +1,0 @@
-("CTYPEPC.DGO"
- ("ctypepc.go"
- ))

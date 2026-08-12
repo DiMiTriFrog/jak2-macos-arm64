@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: net-projectile.gc
-;; name in dgo: net-projectile
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
   bool flag_compile = false;
   bool flag_play = false;
   bool flag_folder = false;
-  std::string game_name = "jak1";
+  std::string game_name = "jak2";
   std::string decomp_config_override = "{}";
 
   lg::initialize();
@@ -201,7 +201,7 @@ int main(int argc, char** argv) {
                  "Explicitly set the location of the 'data/' folder");
   app.add_option("--extract-path", extraction_path,
                  "Explicitly set the location for where the ISO should be extracted");
-  app.add_option("-g,--game", game_name, "Specify the game name, defaults to 'jak1'");
+  app.add_option("-g,--game", game_name, "Specify the game name: 'jak2' only");
   app.add_option(
       "--decomp-config-override", decomp_config_override,
       "JSON provided will be merged with the decompiler config, use to override options");
@@ -216,6 +216,11 @@ int main(int argc, char** argv) {
   define_common_cli_arguments(app);
   app.validate_positionals();
   CLI11_PARSE(app, argc, argv);
+
+  if (game_name != "jak2") {
+    lg::error("Only Jak 2 is supported by this checkout");
+    return 1;
+  }
 
   lg::info("Working Directory - {}", fs::current_path().string());
 

@@ -96,7 +96,7 @@ struct ObjectPatchInfo {
 };
 
 struct Config {
-  GameVersion game_version = GameVersion::Jak1;
+  GameVersion game_version = GameVersion::Jak2;
   std::vector<std::string> dgo_names;
   std::vector<std::string> object_file_names;
   std::vector<std::string> str_file_names;

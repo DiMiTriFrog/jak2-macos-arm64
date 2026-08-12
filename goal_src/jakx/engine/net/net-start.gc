@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: net-start.gc
-;; name in dgo: net-start
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

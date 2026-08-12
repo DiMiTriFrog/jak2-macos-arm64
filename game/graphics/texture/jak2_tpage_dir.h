@@ -5,3 +5,4 @@
 #include "common/common_types.h"
 
 const std::vector<u32>& get_jak2_tpage_dir();
+constexpr u32 EXTRA_PC_PORT_TEXTURE_COUNT = 128;

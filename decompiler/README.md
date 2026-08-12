@@ -12,13 +12,13 @@ cd ..
 After compiling:
 First create a folder for the output and create a folder for the input.  Add all of the CGO/DGO files into the input folder.
 ```
-build/jak_disassembler config/jak1_ntsc_black_label.jsonc in_folder/ out_folder/
+build/decompiler/decompiler decompiler/config/jak2/jak2_config.jsonc in_folder/ out_folder/
 ```
 
 
 Notes
 --------
-The `config` folder has settings for the disassembly. Currently Jak 2 and Jak 3 are not as well supported as Jak 1.
+The `config` folder contains the Jak 2 disassembly settings used by this checkout.
 
 
 # Procedure
@@ -77,7 +77,7 @@ Dumps words in each segment like `hexdump`. There's an option to only run this o
 Like `write_object_file_words`, but code is replaced with disassembly.  There's a config option to avoid running this on object files with no functions, as these are usually large data files which are uninteresting to view as a binary dump and slow to dump.
 
 ## Basic Block Finding 
-Look at branch intstructions and their destinations to find all basic blocks.  Implemented in `find_blocks_in_function` as part of `analyze_functions`.  This works for Jak 1, 2 and 3.
+Look at branch instructions and their destinations to find all basic blocks. Implemented in `find_blocks_in_function` as part of `analyze_functions`; the active extraction path is Jak 2.
 
 ## Analyze Functions Prologues and Epilogues
 This will help us find stack variables and make sure that the prologue/epilogue are ignored by the statement generation.
@@ -111,7 +111,7 @@ A similar process is done for the epilogue, and it is checked against the prolog
 The prologue is removed from the first basic block and the epilogue + alignment padding is removed from the last one.
 
 # Documentation of Planned Steps that are not implemented
-Currently the focus is to get these working for Jak 1. But it shouldn't be much extra work to support Jak 2/3.
+The focused target for this checkout is Jak 2.
 
 
 ## Guess Function Names (to be implemented)

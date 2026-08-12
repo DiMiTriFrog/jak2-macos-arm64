@@ -1,9 +1,0 @@
-("TORVL3.DGO"
- ("wheel-t-ag.o"
-  "wolf-chassis-ag.go"
-  "wolf-door-b-ag.go"
-  "wolf-f-bumper-b-ag.go"
-  "wolf-hood-e-ag.go"
-  "wolf-r-bumper-b-ag.go"
-  "torvl3.o"
- ))

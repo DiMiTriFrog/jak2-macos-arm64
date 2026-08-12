@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: net-deathrace.gc
-;; name in dgo: net-deathrace
-;; dgos: COMMON, GAME
-
-;; DECOMP BEGINS
-

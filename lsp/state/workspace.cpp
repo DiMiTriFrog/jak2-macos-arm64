@@ -79,20 +79,13 @@ std::optional<DefinitionMetadata> Workspace::get_definition_info_from_all_types(
   return dts->symbol_metadata_map.at(symbol_name);
 }
 
-// TODO - a gross hack that should go away when the language isn't so tightly coupled to the jak
-// games
-//
-// This is bad because jak 2 now uses some code from the jak1 folder, and also wouldn't be able to
-// be determined (jak1 or jak2?) if we had a proper 'common' folder(s).
+// The ARM64 snapshot contains one game source tree, so URI classification is
+// intentionally limited to Jak 2.
 std::optional<GameVersion> Workspace::determine_game_version_from_uri(
     const LSPSpec::DocumentUri& uri) {
   const auto path = lsp_util::uri_to_path(uri);
-  if (str_util::contains(path, "goal_src/jak1")) {
-    return GameVersion::Jak1;
-  } else if (str_util::contains(path, "goal_src/jak2")) {
+  if (str_util::contains(path, "goal_src/jak2")) {
     return GameVersion::Jak2;
-  } else if (str_util::contains(path, "goal_src/jak3")) {
-    return GameVersion::Jak3;
   }
   return {};
 }

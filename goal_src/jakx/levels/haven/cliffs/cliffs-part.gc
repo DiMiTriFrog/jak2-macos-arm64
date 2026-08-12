@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: cliffs-part.gc
-;; name in dgo: cliffs-part
-;; dgos: CLF, CLFX
-
-;; DECOMP BEGINS
-

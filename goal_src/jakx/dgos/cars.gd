@@ -1,3 +1,0 @@
-("CARS.DGO"
- ("cars.o"
- ))

@@ -4,7 +4,7 @@
 #include <cstring>
 
 #include "game/overlord/common/sbank.h"
-#include "game/overlord/jak1/ramdisk.h"
+#include "game/overlord/jak2/ramdisk.h"
 #include "game/overlord/jak2/iso.h"
 #include "game/overlord/jak2/iso_queue.h"
 #include "game/overlord/jak2/srpc.h"
@@ -37,12 +37,12 @@ int start_overlord(int, const char* const*) {
 
   InitBanks();
   InitSound_overlord();
-  jak1::InitRamdisk();  // ramdisk believed unused.
+  InitRamdisk();  // ramdisk believed unused.
   RegisterVblankHandler(0, 0x20, VBlank_Handler, 0);
 
   // ramdisk believed unused.
   ThreadParam param;
-  param.entry = jak1::Thread_Server;
+  param.entry = Thread_Server;
   param.attr = TH_C;
   param.initPriority = 0x7a;
   param.stackSize = 0x800;

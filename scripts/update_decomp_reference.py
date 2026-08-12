@@ -9,7 +9,7 @@ from gsrc.utils import get_ref_path_from_filename
 ## Instructions:
 ##  run offline-test with the `--dump_current_output` flag set. This generates a "failures" folder.
 ## update reference like this
-##    python3 ../scripts/update_decomp_reference.py ./failures ../test/decompiler/reference --game [jak1|jak2]
+##    python3 ../scripts/update_decomp_reference.py ./failures ../test/decompiler/reference --game jak2
 
 def get_failures(root_dir):
     return [
@@ -29,7 +29,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(dest="diff", help="the failures folder")
     parser.add_argument(dest="reference", help="the test/decompiler/reference folder")
-    parser.add_argument("--game", help="The name of the game (jak1/jak2)", type=str)
+    parser.add_argument("--game", help="The game name (jak2)", choices=["jak2"], type=str)
     args = parser.parse_args()
 
     for replacement in get_failures(args.diff):

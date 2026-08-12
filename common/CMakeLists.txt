@@ -29,6 +29,10 @@ endfunction()
 write_revision_h()
 
 add_library(common
+        aot/AotExecution.cpp
+        aot/AotDataTemplate.cpp
+        aot/AotFunction.cpp
+        aot/AotManifest.cpp
         audio/audio_formats.cpp
         cross_os_debug/xdbg.cpp
         cross_sockets/XSocket.cpp
@@ -83,9 +87,7 @@ add_library(common
         util/dialogs.cpp
         util/diff.cpp
         util/FileUtil.cpp
-        util/font/dbs/font_db_jak1.cpp
         util/font/dbs/font_db_jak2.cpp
-        util/font/dbs/font_db_jak3.cpp
         util/font/font_utils_korean.cpp
         util/font/font_utils.cpp
         util/FrameLimiter.cpp

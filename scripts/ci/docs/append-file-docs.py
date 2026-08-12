@@ -40,6 +40,4 @@ def append_file_docs(game_name):
     json.dump(file_docs, f)
 
 
-append_file_docs("jak1")
 append_file_docs("jak2")
-append_file_docs("jak3")

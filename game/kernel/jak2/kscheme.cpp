@@ -6,11 +6,14 @@
 
 #include "fileio.h"
 
+#include "common/aot/AotExecution.h"
+#include "common/aot/AotFunction.h"
 #include "common/common_types.h"
 #include "common/global_profiler/GlobalProfiler.h"
 #include "common/goal_constants.h"
 #include "common/jit_memory.h"
 #include "common/log/log.h"
+#include "common/platform/BuildConfig.h"
 #include "common/symbols.h"
 
 #include "game/kernel/common/arm64_trampoline.h"
@@ -89,7 +92,9 @@ u64 alloc_from_heap(u32 heap_symbol, u32 type, s32 size, u32 pp) {
   // The function type is allocated before its GOAL symbol is initialized, so this check must
   // happen before the type metadata fast paths below.
   if (type && type == u32_in_fixed_sym(FIX_SYM_FUNCTION_TYPE)) {
+#if !OG_EXECUTION_MODE_AOT
     allocation_flags |= KMALLOC_EXECUTABLE;
+#endif
   }
 #endif
 
@@ -315,6 +320,16 @@ void _stack_call_arm64();
  * But calling this function is fast. It used to be really fast but wrong.
  */
 Ptr<Function> make_function_from_c_systemv(void* func, bool arg3_is_pp) {
+#if OG_EXECUTION_MODE_AOT
+  const auto flags = arg3_is_pp ? goal_aot::kAcceptsProcessPointer : goal_aot::kNone;
+  const auto id = goal_aot::register_native_bridge(func, flags, "c-bridge");
+  auto mem = Ptr<u8>(alloc_heap_object(s7.offset + FIX_SYM_GLOBAL_HEAP,
+                                       u32_in_fixed_sym(FIX_SYM_FUNCTION_TYPE),
+                                       sizeof(goal_aot::FunctionDescriptor), UNKNOWN_PP));
+  *reinterpret_cast<goal_aot::FunctionDescriptor*>(mem.c()) =
+      goal_aot::make_descriptor(id, 1, flags);
+  return mem.cast<Function>();
+#else
 #if defined(__aarch64__)
   if (g_ee_main_mem && kglobalheap.offset) {
     jit_memory::make_writable(kglobalheap->current.c(), 0x40);
@@ -369,6 +384,7 @@ Ptr<Function> make_function_from_c_systemv(void* func, bool arg3_is_pp) {
 #endif
 
   return mem.cast<Function>();
+#endif
 }
 
 /*!
@@ -435,6 +451,16 @@ Ptr<Function> make_function_from_c_win32(void* func, bool arg3_is_pp) {
 }
 
 Ptr<Function> make_stack_arg_function_from_c_systemv(void* func) {
+#if OG_EXECUTION_MODE_AOT
+  constexpr auto flags = goal_aot::kUsesGoalStack;
+  const auto id = goal_aot::register_native_bridge(func, flags, "stack-c-bridge");
+  auto mem = Ptr<u8>(alloc_heap_object(s7.offset + FIX_SYM_GLOBAL_HEAP,
+                                       u32_in_fixed_sym(FIX_SYM_FUNCTION_TYPE),
+                                       sizeof(goal_aot::FunctionDescriptor), UNKNOWN_PP));
+  *reinterpret_cast<goal_aot::FunctionDescriptor*>(mem.c()) =
+      goal_aot::make_descriptor(id, 1, flags);
+  return mem.cast<Function>();
+#else
 #if defined(__aarch64__)
   if (g_ee_main_mem && kglobalheap.offset) {
     jit_memory::make_writable(kglobalheap->current.c(), 0x40);
@@ -481,6 +507,7 @@ Ptr<Function> make_stack_arg_function_from_c_systemv(void* func) {
 #endif
 
   return mem.cast<Function>();
+#endif
 }
 
 #ifdef _WIN32
@@ -556,6 +583,13 @@ Ptr<Function> make_stack_arg_function_from_c(void* func) {
  * Create a GOAL function which does nothing and immediately returns.
  */
 Ptr<Function> make_nothing_func() {
+#if OG_EXECUTION_MODE_AOT
+  return make_function_from_c_systemv(reinterpret_cast<void*>(+[](uint64_t, uint64_t, uint64_t,
+                                                                  uint64_t, uint64_t, uint64_t,
+                                                                  uint64_t, uint64_t) -> uint64_t {
+    return 0;
+  }), false);
+#else
 #if defined(__aarch64__)
   if (g_ee_main_mem && kglobalheap.offset) {
     jit_memory::make_writable(kglobalheap->current.c(), 0x40);
@@ -575,12 +609,20 @@ Ptr<Function> make_nothing_func() {
   // CacheFlush(mem, 8);
 #endif
   return mem.cast<Function>();
+#endif
 }
 
 /*!
  * Create a GOAL function which returns 0.
  */
 Ptr<Function> make_zero_func() {
+#if OG_EXECUTION_MODE_AOT
+  return make_function_from_c_systemv(reinterpret_cast<void*>(+[](uint64_t, uint64_t, uint64_t,
+                                                                  uint64_t, uint64_t, uint64_t,
+                                                                  uint64_t, uint64_t) -> uint64_t {
+    return 0;
+  }), false);
+#else
 #if defined(__aarch64__)
   if (g_ee_main_mem && kglobalheap.offset) {
     jit_memory::make_writable(kglobalheap->current.c(), 0x40);
@@ -602,6 +644,7 @@ Ptr<Function> make_zero_func() {
   // CacheFlush(mem, 8);
 #endif
   return mem.cast<Function>();
+#endif
 }
 
 /*!

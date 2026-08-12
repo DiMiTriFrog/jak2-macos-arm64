@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: water.gc
-;; name in dgo: water
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-

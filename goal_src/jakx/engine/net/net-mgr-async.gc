@@ -1,9 +1,0 @@
-;;-*-Lisp-*-
-(in-package goal)
-
-;; name: net-mgr-async.gc
-;; name in dgo: net-mgr-async
-;; dgos: ENGINE, GAME
-
-;; DECOMP BEGINS
-
